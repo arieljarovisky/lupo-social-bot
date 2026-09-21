@@ -46,7 +46,7 @@ Copy-Item .env.example .env
 Editar `.env`. Para el simulador, crear un `SIMULATOR_TOKEN` aleatorio distinto del token de Meta. Mantener `DRY_RUN=true` en las primeras pruebas. Elegí `META_VERIFY_TOKEN` aleatorio y copiá desde Meta el `META_APP_SECRET` real; nunca compartas ni publiques secretos o tokens. Ingresá `IG_USER_ID`, `IG_ACCESS_TOKEN`, `FB_PAGE_ID`, `FB_PAGE_ACCESS_TOKEN`, `IG_USERNAME` (opcional, recomendado para evitar respuestas a comentarios propios). El número de WhatsApp es opcional y se usa solo para generar un enlace; **no envía mensajes por WhatsApp**.
 
 ```bash
-npm start
+npm run dev
 ```
 
 Visitar `http://127.0.0.1:3000/health` para comprobar el estado.
@@ -60,7 +60,20 @@ curl -X POST http://127.0.0.1:3000/simulate \
   -d '{"text":"Hola, ¿precio del boxer y talle G?"}'
 ```
 
-El simulador requiere un token propio además de una conexión local. Un túnel hacia localhost también puede reenviar esa ruta: **no expongas el token del simulador ni los archivos de configuración**; publicá únicamente el webhook o usá un proxy que filtre rutas. El servidor escucha por defecto en 127.0.0.1, apropiado para el desarrollo con túnel local. Para hosting, configurá el binding y el proxy de forma segura.
+El simulador exige IP loopback y token secreto; no está diseñado para invocación pública. En desarrollo el servidor escucha en 0.0.0.0; en Railway usar dominio HTTPS público y mantener secretos exclusivamente en Variables. No expongas archivos .env ni tokens.
+
+## Despliegue en Railway (MVP de pruebas)
+
+Esta variante funciona con Railway: `npm start` **no depende de tener un archivo `.env` en el servidor**; Railway inyecta variables de entorno. El servidor escucha en `0.0.0.0` y en el `PORT` asignado por Railway.
+
+1. Subí **solo la carpeta `lupo-social-bot`** a un repositorio privado de GitHub. `.gitignore` excluye `.env`, pero verificá con `git status` antes de publicar. No subas un `.env` con secretos.
+2. Railway > New Project > Deploy from GitHub Repo > elegí el repo; el directorio raíz es el que contiene `package.json`. No hace falta instalar una base de datos para probar el handshake.
+3. Service > Variables: `META_VERIFY_TOKEN`, `META_APP_SECRET`, `DRY_RUN=true` y, cuando puedas generarlos, `IG_USER_ID`, `IG_ACCESS_TOKEN`, `FB_PAGE_ID`, `FB_PAGE_ACCESS_TOKEN`. `META_VERIFY_TOKEN` debe ser aleatorio y coincidir con el campo de Meta; `META_APP_SECRET` es el secreto real de la app (no lo compartas). No cargues `PORT` salvo necesidad especial.
+4. Settings > Networking > Generate Domain. Comprobá `https://DOMINIO.up.railway.app/health`; esperá `{"ok":true,"simulation":true}`.
+5. En Meta > Instagram API > Webhooks: Callback URL = `https://DOMINIO.up.railway.app/webhook` y Verify Token = valor de `META_VERIFY_TOKEN`; pulsá Verificar y guardar. La app puede requerir estar publicada y permisos aprobados para eventos reales; tener la URL verificada no los concede.
+6. Mantené `DRY_RUN=true` hasta probar roles/permisos/eventos y endurecer la persistencia. En el MVP el procesamiento ocurre tras devolver HTTP 200 y los datos de deduplicación viven en memoria; un reinicio puede perder eventos o generar duplicados. **No es adecuado para atención comercial desatendida en producción** sin cola y almacenamiento durable.
+
+Para desarrollo local: copiar `.env.example` a `.env` y usar `npm run dev`. En Railway: `npm start`.
 
 ## 3. Meta Developers: conexión real
 

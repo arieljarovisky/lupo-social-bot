@@ -55,7 +55,6 @@ app.post('/simulate', (req, res) => {
 });
 
 const port = Number(env.PORT || 3000);
-app.listen(port, '127.0.0.1', () => {
-  console.log(`Lupo bot listening on http://127.0.0.1:${port}, DRY_RUN=${config.dryRun}`);
-  console.log('Para recibir webhooks externos usá un túnel HTTPS seguro hacia localhost.');
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Lupo bot listening on port ${port}, DRY_RUN=${config.dryRun}`);
 });
