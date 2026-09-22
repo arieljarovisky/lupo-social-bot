@@ -67,7 +67,17 @@ app.post('/webhook', express.raw({ type: () => true, limit: '256kb' }), (req, re
     return res.sendStatus(404);
   }
   const events = extractEvents(payload);
-  console.log(`[WEBHOOK] POST ${payload.object} eventos=${events.length}`);
+  if (!events.length) {
+    const shape = (payload.entry ?? []).map((entry) => ({
+      id: entry.id,
+      keys: Object.keys(entry),
+      fields: (entry.changes ?? []).map((change) => change.field),
+      flatField: entry.field || null
+    }));
+    console.log(`[WEBHOOK] POST ${payload.object} eventos=0 shape=${JSON.stringify(shape)}`);
+  } else {
+    console.log(`[WEBHOOK] POST ${payload.object} eventos=${events.length}`);
+  }
   // Acknowledge quickly. For production, enqueue durably BEFORE ACK (Redis/BullMQ).
   res.status(200).send('EVENT_RECEIVED');
   for (const event of events) {

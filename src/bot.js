@@ -29,7 +29,10 @@ export async function processEvent(event, config, send = graphPost) {
 
   // Only handle events for accounts explicitly configured in this project.
   const expected = event.platform === 'instagram' ? config.igUserId : config.fbPageId;
-  if (!expected || event.accountId !== String(expected)) return { action: 'ignored_account' };
+  if (!expected || event.accountId !== String(expected)) {
+    console.log(`[BOT] ignored_account platform=${event.platform} got=${event.accountId} expected=${expected}`);
+    return { action: 'ignored_account' };
+  }
   const key = `${event.platform}:${event.kind}:${event.accountId}:${event.id}`;
   if (recent.has(key) || inFlight.has(key)) return { action: 'duplicate' };
   const customerKey = `${event.platform}:${event.accountId}:${event.senderId}`;

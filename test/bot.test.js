@@ -42,7 +42,12 @@ test('extrae DMs/comentarios en ambas redes y descarta ecos y respuestas anidada
     { field: 'comments', value: { id: 'i1', text: 'Precio', from: { id: 'c1' } } },
     { field: 'comments', value: { id: 'i2', text: 'Respuesta', parent_id: 'i1', from: { id: 'c1' } } }
   ] }] });
+  const igFlat = extractEvents({ object: 'instagram', entry: [{
+    id: 'ig123', field: 'comments',
+    value: { id: 'i3', text: 'Precio', from: { id: 'c1' }, media: { id: 'm9' }, parent_id: 'm9' }
+  }] });
   assert.deepEqual(fb.map((x) => x.id), ['m1', 'f1']);
+  assert.deepEqual(igFlat.map((x) => x.id), ['i3']);
   assert.deepEqual(ig.map((x) => x.id), ['i1']);
 });
 

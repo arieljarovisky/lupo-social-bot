@@ -56,14 +56,21 @@ export function extractEvents(payload) {
       });
     }
     if (payload.object === 'instagram') {
-      for (const change of entry.changes ?? []) {
+      const commentChanges = [...(entry.changes ?? [])];
+      if (entry.field && entry.value) commentChanges.push({ field: entry.field, value: entry.value });
+      for (const change of commentChanges) {
         if (change.field !== 'comments') continue;
         const value = change.value ?? {};
-        if (!value.id || !value.text) {
+        const commentId = value.id || value.comment_id;
+        const text = value.text || value.message;
+        const mediaId = String(value.media?.id ?? '');
+        const parentId = value.parent_id ? String(value.parent_id) : '';
+        const isReply = Boolean(parentId) && parentId !== mediaId && parentId !== accountId && parentId !== String(commentId ?? '');
+        if (!commentId || !text) {
           console.log('[WEBHOOK] comment IG sin id o texto');
           continue;
         }
-        if (value.parent_id) {
+        if (isReply) {
           console.log('[WEBHOOK] comment IG anidado ignorado');
           continue;
         }
@@ -73,7 +80,7 @@ export function extractEvents(payload) {
         }
         events.push({ platform: 'instagram', kind: 'comment', accountId,
           senderId: String(value.from?.id ?? ''), username: value.from?.username ?? '',
-          id: String(value.id), text: value.text, timestamp: Date.now() });
+          id: String(commentId), text, timestamp: Date.now() });
       }
     }
     if (payload.object === 'page') {
