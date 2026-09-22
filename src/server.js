@@ -24,20 +24,32 @@ app.get('/health', (_, res) => res.json({ ok: true, simulation: config.dryRun })
 app.get('/webhook', (req, res) => {
   const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
   if (mode === 'subscribe' && env.META_VERIFY_TOKEN && token === env.META_VERIFY_TOKEN &&
-      typeof challenge === 'string') return res.status(200).type('text/plain').send(challenge);
+      typeof challenge === 'string') {
+    console.log('[WEBHOOK] handshake ok');
+    return res.status(200).type('text/plain').send(challenge);
+  }
+  console.log('[WEBHOOK] handshake rechazado (token o challenge inválido)');
   return res.sendStatus(403);
 });
 
 // MUST keep the body raw for HMAC validation; do not use express.json() before this route.
 app.post('/webhook', express.raw({ type: 'application/json', limit: '256kb' }), (req, res) => {
   if (!verifySignature(req.body, req.get('x-hub-signature-256'), env.META_APP_SECRET)) {
+    console.log('[WEBHOOK] POST rechazado: firma HMAC inválida o falta META_APP_SECRET');
     return res.sendStatus(403);
   }
   let payload;
   try { payload = JSON.parse(req.body.toString('utf8')); }
-  catch { return res.sendStatus(400); }
-  if (!['instagram', 'page'].includes(payload.object)) return res.sendStatus(404);
+  catch {
+    console.log('[WEBHOOK] POST rechazado: JSON inválido');
+    return res.sendStatus(400);
+  }
+  if (!['instagram', 'page'].includes(payload.object)) {
+    console.log(`[WEBHOOK] POST ignorado: object=${payload.object}`);
+    return res.sendStatus(404);
+  }
   const events = extractEvents(payload);
+  console.log(`[WEBHOOK] POST ${payload.object} eventos=${events.length}`);
   // Acknowledge quickly. For production, enqueue durably BEFORE ACK (Redis/BullMQ).
   res.status(200).send('EVENT_RECEIVED');
   for (const event of events) {
