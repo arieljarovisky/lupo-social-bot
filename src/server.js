@@ -1,7 +1,10 @@
+import { timingSafeEqual } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { verifySignature, extractEvents } from './meta.js';
 import { processEvent } from './bot.js';
-import { answerFor, publicCommentFor } from './replies.js';
+import { answerFor, publicCommentFor, getCatalog, setCatalog, previewFor } from './replies.js';
 
 const env = process.env;
 const config = {
@@ -12,8 +15,10 @@ const config = {
   igPrivateReplies: env.IG_PRIVATE_REPLIES === 'true', dryRun: env.DRY_RUN !== 'false',
   storeUrl: env.STORE_URL || 'https://lupo.ar', whatsappNumber: env.WHATSAPP_NUMBER || ''
 };
+const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.get('/health', (_, res) => res.json({ ok: true, simulation: config.dryRun }));
 
 app.get('/webhook', (req, res) => {
@@ -44,11 +49,91 @@ app.post('/webhook', express.raw({ type: 'application/json', limit: '256kb' }), 
   }
 });
 
+function clientIp(req) {
+  return req.ip?.replace('::ffff:', '') || '';
+}
+
+function isLocal(req) {
+  const ip = clientIp(req);
+  return ip === '127.0.0.1' || ip === '::1';
+}
+
+function adminToken() {
+  return env.ADMIN_TOKEN || env.SIMULATOR_TOKEN || '';
+}
+
+function safeEqual(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string' || !left || left.length !== right.length) return false;
+  return timingSafeEqual(Buffer.from(left), Buffer.from(right));
+}
+
+function providedAdminToken(req) {
+  const header = req.get('authorization') || '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
+  return bearer || req.get('x-admin-token') || '';
+}
+
+function isAuthorized(req) {
+  const expected = adminToken();
+  if (expected) return safeEqual(providedAdminToken(req), expected);
+  return isLocal(req);
+}
+
+function requireAdmin(req, res, next) {
+  if (isAuthorized(req)) return next();
+  if (adminToken()) return res.status(401).json({ error: 'No autorizado. Ingresá el token del panel.' });
+  return res.status(401).json({ error: 'Configurá ADMIN_TOKEN para usar el panel fuera de localhost.' });
+}
+
+const replyOpts = () => ({ storeUrl: config.storeUrl, whatsappNumber: config.whatsappNumber });
+
+app.use('/api', express.json({ limit: '64kb' }));
+app.get('/api/session', (req, res) => {
+  res.json({
+    ok: isAuthorized(req),
+    authRequired: Boolean(adminToken()),
+    local: isLocal(req)
+  });
+});
+app.get('/api/replies', requireAdmin, (_req, res) => {
+  res.json({
+    catalog: getCatalog(),
+    meta: {
+      storeUrl: config.storeUrl,
+      whatsappConfigured: /^\d{10,15}$/.test(config.whatsappNumber),
+      igPrivateReplies: config.igPrivateReplies,
+      dryRun: config.dryRun
+    }
+  });
+});
+app.put('/api/replies', requireAdmin, (req, res) => {
+  try {
+    const catalog = setCatalog(req.body);
+    res.json({ ok: true, catalog });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+app.post('/api/preview', requireAdmin, (req, res) => {
+  const text = String(req.body?.text ?? '').slice(0, 2000);
+  const previous = getCatalog();
+  try {
+    if (req.body?.catalog) setCatalog(req.body.catalog, { persist: false });
+    res.json(previewFor(text, replyOpts()));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  } finally {
+    if (req.body?.catalog) setCatalog(previous, { persist: false });
+  }
+});
+
+app.get('/admin', (_req, res) => res.sendFile(join(publicDir, 'admin.html')));
+app.get('/', (_req, res) => res.redirect('/admin'));
+
 // Local-only simulator: never deployed publicly as it gives away reply logic.
 app.use('/simulate', express.json({ limit: '8kb' }));
 app.post('/simulate', (req, res) => {
-  const ip = req.ip?.replace('::ffff:', '');
-  if ((ip !== '127.0.0.1' && ip !== '::1') || !env.SIMULATOR_TOKEN ||
+  if (!isLocal(req) || !env.SIMULATOR_TOKEN ||
       req.get('x-simulator-token') !== env.SIMULATOR_TOKEN) return res.sendStatus(403);
   const text = String(req.body?.text ?? '').slice(0, 2000);
   res.json({ dm: answerFor(text, config), comment: publicCommentFor(text, config) });
@@ -57,4 +142,5 @@ app.post('/simulate', (req, res) => {
 const port = Number(env.PORT || 3000);
 app.listen(port, '0.0.0.0', () => {
   console.log(`Lupo bot listening on port ${port}, DRY_RUN=${config.dryRun}`);
+  console.log(`Panel de respuestas: http://127.0.0.1:${port}/admin`);
 });

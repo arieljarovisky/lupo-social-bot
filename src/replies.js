@@ -1,73 +1,180 @@
-const normalize = (value = '') => String(value).normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const matches = (text, patterns) => patterns.some((pattern) => pattern.test(text));
+const DATA_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'replies.json');
+const ID_RE = /^[a-z][a-z0-9_-]{0,39}$/;
+const MAX_INTENTS = 20;
+const MAX_KEYWORDS = 30;
+const MAX_DM = 800;
+const MAX_COMMENT = 400;
 
-/** Returns a conservative response. Never invents availability, prices or size. */
-export function answerFor(message, { storeUrl = 'https://lupo.ar', whatsappNumber = '' } = {}) {
-  const text = normalize(message);
-  const store = storeUrl.replace(/\/+$/, '');
+const DEFAULTS = JSON.parse(readFileSync(DATA_PATH, 'utf8'));
+
+let catalog = loadFromDisk();
+
+function normalize(value = '') {
+  return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+function matches(text, patterns) {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function compileKeywords(keywords) {
+  return keywords.map((keyword) => new RegExp(keyword, 'i'));
+}
+
+function applyVars(text, { storeUrl = 'https://lupo.ar', whatsappNumber = '' } = {}) {
+  const store = String(storeUrl || 'https://lupo.ar').replace(/\/+$/, '');
   const whatsapp = /^\d{10,15}$/.test(whatsappNumber)
     ? ` Podés contactarnos en https://wa.me/${whatsappNumber}.`
     : ' Un asesor puede ayudarte por este mismo chat.';
+  return String(text ?? '').replaceAll('{{store}}', store).replaceAll('{{whatsapp}}', whatsapp);
+}
 
-  if (matches(text, [/asesor/, /persona real/, /humano/, /operador/, /atencion personalizada/])) {
-    return { intent: 'handoff', handoff: true,
-      text: `¡Hola! 💙 Dejamos esta conversación para atención personalizada. Nuestro equipo puede continuar por la bandeja de mensajes.${whatsapp}` };
+function cleanText(value, max) {
+  return String(value ?? '').replace(/\r\n/g, '\n').slice(0, max);
+}
+
+export function validateCatalog(input) {
+  if (!input || typeof input !== 'object' || !Array.isArray(input.intents)) {
+    throw new Error('El catálogo debe incluir una lista de intenciones.');
   }
-  if (matches(text, [/reclamo/, /equivocad/, /devoluc/, /cambi[oa]/, /fallad/, /roto/, /no (me )?llego/, /no recib/, /cancelar/])) {
-    return { intent: 'handoff', handoff: true,
-      text: `¡Hola! 💙 Queremos ayudarte con tu pedido. Por favor, no compartas datos personales públicamente.${whatsapp}` };
+  if (input.intents.length === 0 || input.intents.length > MAX_INTENTS) {
+    throw new Error(`Hace falta entre 1 y ${MAX_INTENTS} intenciones.`);
   }
-  if (matches(text, [/mayorist/, /por mayor/, /revend/, /distribuidor/, /lista de precios/])) {
-    return { intent: 'wholesale', handoff: false,
-      text: `¡Hola! 💙 Sí, trabajamos con ventas mayoristas. Contanos qué productos te interesan y te orientamos con las condiciones de compra.${whatsapp}` };
+  const extrasIn = input.extras && typeof input.extras === 'object' ? input.extras : {};
+  const seen = new Set();
+  let hasUnknown = false;
+  const intents = input.intents.map((raw, index) => {
+    if (!raw || typeof raw !== 'object') throw new Error(`Intención inválida en la posición ${index + 1}.`);
+    const id = String(raw.id ?? '').trim();
+    if (!ID_RE.test(id)) throw new Error(`El id "${id || '(vacío)'}" no es válido.`);
+    if (seen.has(id)) throw new Error(`Hay dos intenciones con el id "${id}".`);
+    seen.add(id);
+    if (id === 'unknown') hasUnknown = true;
+    const keywords = Array.isArray(raw.keywords) ? raw.keywords : [];
+    if (keywords.length > MAX_KEYWORDS) throw new Error(`"${id}" tiene demasiadas palabras clave.`);
+    const cleanedKeywords = keywords.map((keyword, keyIndex) => {
+      const source = String(keyword ?? '').trim();
+      if (!source || source.length > 80) throw new Error(`Palabra clave inválida en "${id}" (#${keyIndex + 1}).`);
+      try { new RegExp(source, 'i'); } catch { throw new Error(`El patrón "${source}" de "${id}" no es una expresión válida.`); }
+      return source;
+    });
+    if (id !== 'unknown' && cleanedKeywords.length === 0) {
+      throw new Error(`"${id}" necesita al menos una palabra clave.`);
+    }
+    return {
+      id,
+      label: cleanText(raw.label || id, 60) || id,
+      description: cleanText(raw.description || '', 180),
+      handoff: Boolean(raw.handoff),
+      keywords: cleanedKeywords,
+      dm: cleanText(raw.dm, MAX_DM),
+      comment: cleanText(raw.comment, MAX_COMMENT)
+    };
+  });
+  if (!hasUnknown) throw new Error('Tiene que existir la intención "unknown" (respuesta cuando no hay coincidencia).');
+  return {
+    version: 1,
+    extras: {
+      privateCommentNotice: cleanText(extrasIn.privateCommentNotice, MAX_COMMENT)
+        || '¡Hola! 💙 Te enviamos información por privado.',
+      privateReplySuffix: cleanText(extrasIn.privateReplySuffix, 200)
+        || 'Si querés continuar, respondé este mensaje. 💙'
+    },
+    intents
+  };
+}
+
+function loadFromDisk() {
+  try {
+    return validateCatalog(JSON.parse(readFileSync(DATA_PATH, 'utf8')));
+  } catch (err) {
+    console.error('[REPLIES] No se pudo leer data/replies.json, uso valores por defecto:', err.message);
+    return validateCatalog(DEFAULTS);
   }
-  if (matches(text, [/tall[ea]/, /medid/, /cadera/, /cintura/, /busto/, /equivalenc/])) {
-    return { intent: 'size', handoff: false,
-      text: '¡Hola! 💙 Para orientarte con el talle necesitamos el código o enlace del producto y tus medidas relevantes. La guía cambia según el modelo; no queremos recomendarte un talle incorrecto.' };
+}
+
+function persist(next) {
+  mkdirSync(dirname(DATA_PATH), { recursive: true });
+  const tmp = `${DATA_PATH}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  renameSync(tmp, DATA_PATH);
+}
+
+export function getCatalog() {
+  return structuredClone(catalog);
+}
+
+export function setCatalog(input, { persist: shouldPersist = true } = {}) {
+  const next = validateCatalog(input);
+  if (shouldPersist) persist(next);
+  catalog = next;
+  return getCatalog();
+}
+
+export function resetCatalog({ persist: shouldPersist = false } = {}) {
+  catalog = validateCatalog(DEFAULTS);
+  if (shouldPersist) persist(catalog);
+  return getCatalog();
+}
+
+export function classify(message, opts = {}) {
+  const text = normalize(message);
+  for (const intent of catalog.intents) {
+    if (intent.id === 'unknown') continue;
+    if (matches(text, compileKeywords(intent.keywords))) {
+      return {
+        intent: intent.id,
+        handoff: intent.handoff,
+        text: applyVars(intent.dm, opts),
+        comment: applyVars(intent.comment, opts) || null
+      };
+    }
   }
-  if (matches(text, [/stock/, /disponib/, /tenes/, /tienen/, /hay en/, /color/, /negro/, /blanco/])) {
-    return { intent: 'stock', handoff: false,
-      text: `¡Hola! 💙 Pasanos el código del producto, talle y color que buscás. Podés ver los productos en ${store}. Confirmaremos la disponibilidad antes de asegurarte que está en stock.` };
-  }
-  if (matches(text, [/preci[oa]/, /cuanto (sale|cuesta|esta)/, /valor/, /\$[0-9]/])) {
-    return { intent: 'price', handoff: false,
-      text: `¡Hola! 💙 Pasanos el código o enlace del artículo para identificar la variante correcta. Podés consultar los precios publicados en ${store}; así evitamos pasarte un importe desactualizado.` };
-  }
-  if (matches(text, [/envio/, /despach/, /entrega/, /retir/, /seguimiento/, /correo/, /flex/])) {
-    return { intent: 'shipping', handoff: false,
-      text: `¡Hola! 💙 Hacemos envíos. El costo y plazo dependen del destino y del pedido. Podés consultar las opciones durante la compra en ${store}. Para un pedido existente, escribinos por privado y lo revisa el equipo.` };
-  }
-  if (matches(text, [/compr/, /catalog/, /tienda/, /web/, /link/, /donde/])) {
-    return { intent: 'shop', handoff: false,
-      text: `¡Hola! 💙 Podés ver nuestros productos y comprar en ${store}. Si buscás un artículo puntual, pasanos el código y te ayudamos a encontrarlo.` };
-  }
-  return { intent: 'unknown', handoff: false,
-    text: `¡Hola! 💙 Gracias por escribir a Lupo Argentina. Contanos qué producto te interesa o si consultás por talles, precios, envíos o compras mayoristas.${whatsapp}` };
+  const unknown = catalog.intents.find((intent) => intent.id === 'unknown');
+  return {
+    intent: 'unknown',
+    handoff: Boolean(unknown?.handoff),
+    text: applyVars(unknown?.dm ?? '', opts),
+    comment: applyVars(unknown?.comment ?? '', opts) || null
+  };
+}
+
+/** Returns a conservative response. Never invents availability, prices or size. */
+export function answerFor(message, opts = {}) {
+  const result = classify(message, opts);
+  return { intent: result.intent, handoff: result.handoff, text: result.text };
 }
 
 /** Avoid posting detailed customer info publicly or spamming unrelated comments. */
 export function publicCommentFor(message, opts = {}) {
-  const answer = answerFor(message, opts);
-  if (answer.intent === 'unknown') return null;
-  if (answer.intent === 'handoff') {
-    return '¡Hola! 💙 Escribinos por mensaje privado para que nuestro equipo pueda revisar tu caso sin exponer tus datos.';
-  }
-  if (answer.intent === 'price' || answer.intent === 'stock' || answer.intent === 'size') {
-    return '¡Hola! 💙 Escribinos por privado con el código del producto y te orientamos con la información correcta.';
-  }
-  if (answer.intent === 'wholesale') {
-    return '¡Hola! 💙 Sí, vendemos por mayor. Escribinos por privado y te contamos las condiciones.';
-  }
-  if (answer.intent === 'shipping') {
-    return '¡Hola! 💙 El costo y plazo dependen del destino. Escribinos por privado y te orientamos.';
-  }
-  return '¡Hola! 💙 Podés ver nuestros productos en https://lupo.ar. ¡Gracias por escribirnos!';
+  return classify(message, opts).comment;
 }
 
 export function privateReplyFor(message, opts = {}) {
-  const answer = answerFor(message, opts);
-  if (answer.intent === 'unknown') return null;
-  return `${answer.text}\n\nSi querés continuar, respondé este mensaje. 💙`;
+  const result = classify(message, opts);
+  if (result.intent === 'unknown' && !result.comment && !catalog.intents.find((intent) => intent.id === 'unknown')?.dm) {
+    return null;
+  }
+  if (result.intent === 'unknown') return null;
+  const suffix = catalog.extras.privateReplySuffix;
+  return suffix ? `${result.text}\n\n${suffix}` : result.text;
+}
+
+export function privateCommentNotice() {
+  return catalog.extras.privateCommentNotice;
+}
+
+export function previewFor(message, opts = {}) {
+  const result = classify(message, opts);
+  return {
+    intent: result.intent,
+    handoff: result.handoff,
+    dm: result.text,
+    comment: result.comment,
+    privateReply: privateReplyFor(message, opts)
+  };
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { answerFor, publicCommentFor } from '../src/replies.js';
+import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, resetCatalog, previewFor } from '../src/replies.js';
 import { verifySignature, extractEvents, graphPost } from '../src/meta.js';
 import { processEvent, resetTestState } from '../src/bot.js';
 
@@ -89,6 +89,29 @@ test('Graph client dry run does not make network calls', async () => {
   const result = await graphPost({ platform: 'facebook', accountId: '123', dryRun: true,
     body: { message: { text: 'hola' } }, fetchFn: () => { throw Error('network called'); } });
   assert.equal(result.dryRun, true);
+});
+
+test('el catálogo editable cambia comentarios y se puede restaurar', () => {
+  const original = getCatalog();
+  try {
+    const next = structuredClone(original);
+    const price = next.intents.find((intent) => intent.id === 'price');
+    price.comment = 'Comentario de prueba para precio.';
+    setCatalog(next, { persist: false });
+    assert.equal(publicCommentFor('¿precio?'), 'Comentario de prueba para precio.');
+    assert.match(previewFor('precio').privateReply, /Si querés continuar/);
+    assert.equal(privateReplyFor('Qué lindo'), null);
+  } finally {
+    resetCatalog({ persist: false });
+  }
+  assert.equal(publicCommentFor('¿precio?'), original.intents.find((intent) => intent.id === 'price').comment);
+});
+
+test('rechaza un catálogo sin intención unknown o con regex rota', () => {
+  assert.throws(() => setCatalog({ intents: [{ id: 'price', keywords: ['precio'], dm: 'x', comment: 'y' }] }, { persist: false }));
+  const next = getCatalog();
+  next.intents.find((intent) => intent.id === 'price').keywords = ['('];
+  assert.throws(() => setCatalog(next, { persist: false }));
 });
 
 test('Graph client picks official Instagram host and bearer header', async () => {

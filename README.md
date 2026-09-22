@@ -10,6 +10,7 @@ Proyecto propio en **Node.js 22 + Express**, sin Manychat ni IA paga, para **DM 
 - Intenciones: mayoristas, talles, stock, precios, envíos, compras, reclamos.
 - Respuestas públicas breves que no publican información personal, precios de variantes ni stock sin verificar.
 - Respuesta privada opcional **solo para comentario IG**, `IG_PRIVATE_REPLIES=true`: una solicitud por comentario, sin reintento automático; requiere permisos y respetar los límites de Meta. Se desactiva por defecto.
+- Panel web en `/admin` para ver, editar y previsualizar las respuestas de DM y comentarios. Se guardan en `data/replies.json` y el bot las usa en caliente.
 - Reclamos y preguntas no entendidas: mensaje de derivación al humano y **pausa del bot por 24 h** para esa conversación *en memoria*. Debés supervisar la bandeja de Meta: el software NO asigna agentes ni envía notificaciones externas.
 - Dedupe básico durante 48 h en memoria; sin base de datos ni cola persistente todavía.
 
@@ -49,7 +50,7 @@ Editar `.env`. Para el simulador, crear un `SIMULATOR_TOKEN` aleatorio distinto 
 npm run dev
 ```
 
-Visitar `http://127.0.0.1:3000/health` para comprobar el estado.
+Visitar `http://127.0.0.1:3000/health` para comprobar el estado, o `http://127.0.0.1:3000/admin` para editar las respuestas. En localhost el panel abre sin token; en Railway u otro host público definí `ADMIN_TOKEN`. En un redeploy sin volumen persistente, los cambios de `data/replies.json` se pueden perder.
 
 ### Probar respuestas sin conectar Meta
 
@@ -112,10 +113,12 @@ lupo-social-bot/
   .gitignore
   package.json
   README.md
+  data/replies.json    # textos y palabras clave editables
+  public/admin.html    # panel para ver y editar respuestas
   src/
-    server.js          # servidor Express y webhooks
+    server.js          # servidor Express, webhooks y API del panel
     meta.js            # firma, normalización y llamadas Graph API
-    replies.js         # reglas comerciales Lupo
+    replies.js         # motor de reglas y catálogo
     bot.js             # orquestación, dedupe y pausa humana
   test/
     bot.test.js

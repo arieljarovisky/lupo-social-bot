@@ -1,4 +1,4 @@
-import { answerFor, publicCommentFor, privateReplyFor } from './replies.js';
+import { answerFor, publicCommentFor, privateReplyFor, privateCommentNotice } from './replies.js';
 import { graphPost } from './meta.js';
 
 const recent = new Map();
@@ -81,7 +81,7 @@ export async function processEvent(event, config, send = graphPost) {
     }
     const path = event.platform === 'instagram' ? `${event.id}/replies` : `${event.id}/comments`;
     await send({ ...common, path, body: { message: privateSent
-      ? '¡Hola! 💙 Te enviamos información por privado.' : text } });
+      ? privateCommentNotice() : text } });
     action = `comment_${result.intent}${privateSent ? '_private' : ''}`;
   }
   // Mark only after successful API delivery (in DRY_RUN after successful simulation).

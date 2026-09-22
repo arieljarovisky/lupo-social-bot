@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "extras": {
+    "privateCommentNotice": "¡Hola! 💙 Te enviamos información por privado.",
+    "privateReplySuffix": "Si querés continuar, respondé este mensaje. 💙"
+  },
+  "intents": [
+    {
+      "id": "handoff",
+      "label": "Asesor / humano",
+      "description": "Piden hablar con una persona.",
+      "handoff": true,
+      "keywords": [
+        "asesor",
+        "persona real",
+        "humano",
+        "operador",
+        "atencion personalizada"
+      ],
+      "dm": "¡Hola! 💙 Dejamos esta conversación para atención personalizada. Nuestro equipo puede continuar por la bandeja de mensajes.{{whatsapp}}",
+      "comment": "¡Hola! 💙 Escribinos por mensaje privado para que nuestro equipo pueda revisar tu caso sin exponer tus datos."
+    },
+    {
+      "id": "claim",
+      "label": "Reclamo / pedido",
+      "description": "Problemas con un pedido, cambios o cancelaciones.",
+      "handoff": true,
+      "keywords": [
+        "reclamo",
+        "equivocad",
+        "devoluc",
+        "cambi[oa]",
+        "fallad",
+        "roto",
+        "no (me )?llego",
+        "no recib",
+        "cancelar"
+      ],
+      "dm": "¡Hola! 💙 Queremos ayudarte con tu pedido. Por favor, no compartas datos personales públicamente.{{whatsapp}}",
+      "comment": "¡Hola! 💙 Escribinos por mensaje privado para que nuestro equipo pueda revisar tu caso sin exponer tus datos."
+    },
+    {
+      "id": "wholesale",
+      "label": "Mayorista",
+      "description": "Consultas por mayor, revendedores o lista de precios.",
+      "handoff": false,
+      "keywords": [
+        "mayorist",
+        "por mayor",
+        "revend",
+        "distribuidor",
+        "lista de precios"
+      ],
+      "dm": "¡Hola! 💙 Sí, trabajamos con ventas mayoristas. Contanos qué productos te interesan y te orientamos con las condiciones de compra.{{whatsapp}}",
+      "comment": "¡Hola! 💙 Sí, vendemos por mayor. Escribinos por privado y te contamos las condiciones."
+    },
+    {
+      "id": "size",
+      "label": "Talle / medidas",
+      "description": "Talles, equivalencias o medidas corporales.",
+      "handoff": false,
+      "keywords": [
+        "tall[ea]",
+        "medid",
+        "cadera",
+        "cintura",
+        "busto",
+        "equivalenc"
+      ],
+      "dm": "¡Hola! 💙 Para orientarte con el talle necesitamos el código o enlace del producto y tus medidas relevantes. La guía cambia según el modelo; no queremos recomendarte un talle incorrecto.",
+      "comment": "¡Hola! 💙 Escribinos por privado con el código del producto y te orientamos con la información correcta."
+    },
+    {
+      "id": "stock",
+      "label": "Stock / color",
+      "description": "Disponibilidad, colores o si hay un producto.",
+      "handoff": false,
+      "keywords": [
+        "stock",
+        "disponib",
+        "tenes",
+        "tienen",
+        "hay en",
+        "color",
+        "negro",
+        "blanco"
+      ],
+      "dm": "¡Hola! 💙 Pasanos el código del producto, talle y color que buscás. Podés ver los productos en {{store}}. Confirmaremos la disponibilidad antes de asegurarte que está en stock.",
+      "comment": "¡Hola! 💙 Escribinos por privado con el código del producto y te orientamos con la información correcta."
+    },
+    {
+      "id": "price",
+      "label": "Precio",
+      "description": "Cuánto sale, valor o un importe.",
+      "handoff": false,
+      "keywords": [
+        "preci[oa]",
+        "cuanto (sale|cuesta|esta)",
+        "valor",
+        "\\$[0-9]"
+      ],
+      "dm": "¡Hola! 💙 Pasanos el código o enlace del artículo para identificar la variante correcta. Podés consultar los precios publicados en {{store}}; así evitamos pasarte un importe desactualizado.",
+      "comment": "¡Hola! 💙 Escribinos por privado con el código del producto y te orientamos con la información correcta."
+    },
+    {
+      "id": "shipping",
+      "label": "Envío",
+      "description": "Despacho, entrega, retiro o seguimiento.",
+      "handoff": false,
+      "keywords": [
+        "envio",
+        "despach",
+        "entrega",
+        "retir",
+        "seguimiento",
+        "correo",
+        "flex"
+      ],
+      "dm": "¡Hola! 💙 Hacemos envíos. El costo y plazo dependen del destino y del pedido. Podés consultar las opciones durante la compra en {{store}}. Para un pedido existente, escribinos por privado y lo revisa el equipo.",
+      "comment": "¡Hola! 💙 El costo y plazo dependen del destino. Escribinos por privado y te orientamos."
+    },
+    {
+      "id": "shop",
+      "label": "Compra / tienda",
+      "description": "Catálogo, web, link o dónde comprar.",
+      "handoff": false,
+      "keywords": [
+        "compr",
+        "catalog",
+        "tienda",
+        "web",
+        "link",
+        "donde"
+      ],
+      "dm": "¡Hola! 💙 Podés ver nuestros productos y comprar en {{store}}. Si buscás un artículo puntual, pasanos el código y te ayudamos a encontrarlo.",
+      "comment": "¡Hola! 💙 Podés ver nuestros productos en {{store}}. ¡Gracias por escribirnos!"
+    },
+    {
+      "id": "unknown",
+      "label": "Sin coincidencia",
+      "description": "Mensajes que no matchean ninguna palabra clave. Si el comentario queda vacío, el bot no responde en público.",
+      "handoff": false,
+      "keywords": [],
+      "dm": "¡Hola! 💙 Gracias por escribir a Lupo Argentina. Contanos qué producto te interesa o si consultás por talles, precios, envíos o compras mayoristas.{{whatsapp}}",
+      "comment": ""
+    }
+  ]
+}

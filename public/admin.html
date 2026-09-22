@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lupo · Respuestas del bot</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --ink: #161616;
+      --muted: #6b645b;
+      --card: #fffdf8;
+      --line: #e4d8c8;
+      --red: #b4232c;
+      --red-dark: #8d1a22;
+      --ok: #1f6b4a;
+      --warn: #8a5a12;
+      --shadow: 0 10px 30px rgba(40, 24, 12, .08);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 "Segoe UI", system-ui, sans-serif; }
+    body { min-height: 100vh; }
+    header {
+      position: sticky; top: 0; z-index: 5;
+      display: flex; justify-content: space-between; gap: 16px; align-items: center;
+      padding: 18px 24px; background: #161616; color: #f4efe6;
+    }
+    header strong { letter-spacing: .08em; text-transform: uppercase; font-size: 13px; }
+    header p { margin: 4px 0 0; color: #cfc3b4; font-size: 13px; }
+    .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill { border: 1px solid #3a3a3a; border-radius: 999px; padding: 4px 10px; font-size: 12px; color: #ddd; }
+    .pill.on { border-color: #d7a441; color: #f1d48a; }
+    main { width: min(1100px, calc(100% - 32px)); margin: 24px auto 120px; }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 20px; margin-bottom: 18px; box-shadow: var(--shadow); }
+    h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; margin: 0 0 8px; }
+    h2 { font-size: 22px; }
+    .hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+    .preview-grid, .pair { display: grid; gap: 12px; }
+    @media (min-width: 800px) {
+      .preview-grid { grid-template-columns: 1fr 1fr; }
+      .pair { grid-template-columns: 1fr 1fr; }
+    }
+    label { display: block; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    input, textarea, select {
+      width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+      background: #fff; color: var(--ink); font: inherit;
+    }
+    textarea { min-height: 110px; resize: vertical; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button, .btn {
+      appearance: none; border: 0; border-radius: 999px; padding: 9px 14px; cursor: pointer;
+      background: #161616; color: #fff; font: inherit; font-size: 14px;
+    }
+    button.secondary, .btn.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+    button.danger { background: transparent; color: var(--red); border: 1px solid #f0c8c8; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .card { border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px; background: #fff; }
+    .card.unknown { background: #faf6ef; }
+    .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #f4efe6; border-radius: 999px; padding: 4px 10px; font-size: 13px;
+    }
+    .chip button { padding: 0; background: none; color: var(--muted); font-size: 14px; line-height: 1; }
+    .box { background: #f7f3ec; border-radius: 12px; padding: 12px; min-height: 88px; white-space: pre-wrap; }
+    .box.empty { color: var(--muted); font-style: italic; }
+    .savebar {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      display: flex; justify-content: space-between; gap: 12px; align-items: center;
+      padding: 14px 24px; background: #161616; color: #f4efe6;
+    }
+    .savebar button { background: var(--red); }
+    .savebar button:hover { background: var(--red-dark); }
+    .status.ok { color: #b7ebc8; }
+    .status.err { color: #ffc1c1; }
+    .login {
+      position: fixed; inset: 0; background: rgba(22,22,22,.72); display: grid; place-items: center; padding: 24px; z-index: 10;
+    }
+    .login form { width: min(420px, 100%); background: var(--card); border-radius: 18px; padding: 24px; }
+    .hidden { display: none !important; }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .check input { width: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>Lupo Argentina</strong>
+      <p>Panel de respuestas del bot · DM y comentarios</p>
+    </div>
+    <div class="pills" id="pills"></div>
+  </header>
+
+  <main id="app" class="hidden">
+    <section>
+      <h2>Probar un mensaje</h2>
+      <p class="hint">Escribí lo que diría un cliente. La vista previa usa los textos que estás editando, aunque todavía no los hayas guardado.</p>
+      <div class="row" style="margin-bottom:12px">
+        <input id="previewInput" placeholder="Ej: Hola, ¿cuál es el precio del boxer?">
+        <button type="button" id="previewBtn">Probar</button>
+      </div>
+      <div class="preview-grid">
+        <div>
+          <label>Respuesta en DM</label>
+          <div class="box empty" id="previewDm">Todavía no probaste ningún mensaje.</div>
+        </div>
+        <div>
+          <label>Respuesta en comentario</label>
+          <div class="box empty" id="previewComment">Si no hay palabra clave, el bot no contesta en público.</div>
+        </div>
+      </div>
+      <p class="hint" id="previewMeta" style="margin:12px 0 0"></p>
+    </section>
+
+    <section>
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <div>
+          <h2>Intenciones</h2>
+          <p class="hint">El bot usa la primera coincidencia. Las palabras clave son patrones; “precio” alcanza a “precios”. Podés usar expresiones simples como <code>tall[ea]</code>.</p>
+        </div>
+      <div class="row" id="addRow">
+        <input id="newIntentLabel" placeholder="Nombre de la nueva intención">
+        <button type="button" class="secondary" id="addIntent">Agregar intención</button>
+      </div>
+      </div>
+      <div id="intents"></div>
+    </section>
+
+    <section>
+      <h2>Mensajes extra de Instagram</h2>
+      <p class="hint">Solo se usan si <code>IG_PRIVATE_REPLIES=true</code>. En el comentario público aparece el aviso; el detalle va por privado.</p>
+      <div class="pair">
+        <div>
+          <label for="privateNotice">Aviso público después del DM privado</label>
+          <textarea id="privateNotice"></textarea>
+        </div>
+        <div>
+          <label for="privateSuffix">Cierre del mensaje privado</label>
+          <textarea id="privateSuffix"></textarea>
+        </div>
+      </div>
+      <p class="hint">En los DMs podés usar <code>{{store}}</code> para la tienda y <code>{{whatsapp}}</code> para el texto de WhatsApp.</p>
+    </section>
+  </main>
+
+  <div class="savebar hidden" id="savebar">
+    <span class="status" id="saveStatus">Los cambios se guardan en el servidor y el bot los usa enseguida.</span>
+    <button type="button" id="saveBtn">Guardar respuestas</button>
+  </div>
+
+  <div class="login hidden" id="login">
+    <form id="loginForm">
+      <h2>Entrar al panel</h2>
+      <p class="hint">Usá el valor de <code>ADMIN_TOKEN</code> o <code>SIMULATOR_TOKEN</code> del entorno.</p>
+      <label for="token">Token</label>
+      <input id="token" type="password" autocomplete="current-password">
+      <p class="hint err hidden" id="loginError" style="color:var(--red);margin-top:10px"></p>
+      <div class="row" style="margin-top:16px">
+        <button type="submit">Entrar</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const state = { catalog: null, meta: null, token: sessionStorage.getItem('lupoAdminToken') || '' };
+
+    const $ = (id) => document.getElementById(id);
+    const headers = () => {
+      const h = { 'Content-Type': 'application/json' };
+      if (state.token) h.Authorization = `Bearer ${state.token}`;
+      return h;
+    };
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, { ...options, headers: { ...headers(), ...options.headers } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      return data;
+    }
+
+    function setBox(el, text) {
+      el.textContent = text || 'Sin respuesta pública.';
+      el.classList.toggle('empty', !text);
+    }
+
+    function collect() {
+      return {
+        version: 1,
+        extras: {
+          privateCommentNotice: $('privateNotice').value,
+          privateReplySuffix: $('privateSuffix').value
+        },
+        intents: [...document.querySelectorAll('.card')].map((card) => ({
+          id: card.dataset.id,
+          label: card.querySelector('.label').value,
+          description: card.querySelector('.description').value,
+          handoff: card.querySelector('.handoff').checked,
+          keywords: JSON.parse(card.dataset.keywords || '[]'),
+          dm: card.querySelector('.dm').value,
+          comment: card.querySelector('.comment').value
+        }))
+      };
+    }
+
+    function renderPills() {
+      const m = state.meta || {};
+      $('pills').innerHTML = [
+        `<span class="pill ${m.dryRun ? 'on' : ''}">${m.dryRun ? 'Simulación' : 'Envíos reales'}</span>`,
+        `<span class="pill ${m.igPrivateReplies ? 'on' : ''}">DM privado IG ${m.igPrivateReplies ? 'activo' : 'apagado'}</span>`,
+        `<span class="pill">${m.storeUrl || ''}</span>`
+      ].join('');
+    }
+
+    function keywordList(card) {
+      const wrap = card.querySelector('.chips');
+      const keywords = JSON.parse(card.dataset.keywords || '[]');
+      wrap.innerHTML = keywords.map((word, index) =>
+        `<span class="chip">${escapeAttr(word)}<button type="button" data-remove="${index}" aria-label="Quitar">×</button></span>`
+      ).join('') || '<span class="hint">Sin palabras clave.</span>';
+      wrap.querySelectorAll('[data-remove]').forEach((btn) => {
+        btn.onclick = () => {
+          keywords.splice(Number(btn.dataset.remove), 1);
+          card.dataset.keywords = JSON.stringify(keywords);
+          keywordList(card);
+        };
+      });
+    }
+
+    function renderIntents() {
+      $('intents').innerHTML = state.catalog.intents.map((intent) => `
+        <article class="card ${intent.id === 'unknown' ? 'unknown' : ''}" data-id="${escapeAttr(intent.id)}" data-keywords="${escapeAttr(JSON.stringify(intent.keywords))}">
+          <div class="card-head">
+            <div>
+              <h3>${escapeAttr(intent.label)}</h3>
+              <p class="hint">${intent.id === 'unknown' ? 'Respuesta por defecto cuando no hay coincidencia.' : `Id interno: ${escapeAttr(intent.id)}`}</p>
+            </div>
+            <div class="row">
+              <button type="button" class="secondary up">Subir</button>
+              <button type="button" class="secondary down">Bajar</button>
+              ${intent.id === 'unknown' ? '' : '<button type="button" class="danger del">Quitar</button>'}
+            </div>
+          </div>
+          <div class="pair">
+            <div>
+              <label>Nombre</label>
+              <input class="label" value="${escapeAttr(intent.label)}">
+            </div>
+            <div>
+              <label>Descripción</label>
+              <input class="description" value="${escapeAttr(intent.description || '')}">
+            </div>
+          </div>
+          <label class="check" style="margin:12px 0"><input class="handoff" type="checkbox" ${intent.handoff ? 'checked' : ''}> Pausar el bot 24 h y dejar el caso para un humano</label>
+          <label>Palabras clave</label>
+          <div class="chips"></div>
+          <div class="row" style="margin-bottom:12px">
+            <input class="new-key" placeholder="Agregar palabra o patrón">
+            <button type="button" class="secondary add-key">Agregar</button>
+          </div>
+          <div class="pair">
+            <div>
+              <label>Respuesta de DM</label>
+              <textarea class="dm">${escapeText(intent.dm)}</textarea>
+            </div>
+            <div>
+              <label>Respuesta de comentario</label>
+              <textarea class="comment">${escapeText(intent.comment)}</textarea>
+            </div>
+          </div>
+        </article>
+      `).join('');
+
+      document.querySelectorAll('.card').forEach((card, index, cards) => {
+        keywordList(card);
+        card.querySelector('.add-key').onclick = () => {
+          const input = card.querySelector('.new-key');
+          const value = input.value.trim();
+          if (!value) return;
+          const keywords = JSON.parse(card.dataset.keywords || '[]');
+          keywords.push(value);
+          card.dataset.keywords = JSON.stringify(keywords);
+          input.value = '';
+          keywordList(card);
+        };
+        card.querySelector('.up').onclick = () => move(index, -1);
+        card.querySelector('.down').onclick = () => move(index, 1);
+        const del = card.querySelector('.del');
+        if (del) del.onclick = () => {
+          state.catalog = collect();
+          state.catalog.intents.splice(index, 1);
+          renderIntents();
+        };
+        if (card.dataset.id === 'unknown') {
+          card.querySelector('.up').disabled = true;
+          card.querySelector('.down').disabled = true;
+        }
+        if (index === 0) card.querySelector('.up').disabled = true;
+        if (index >= cards.length - 2) card.querySelector('.down').disabled = true;
+      });
+    }
+
+    function move(index, delta) {
+      state.catalog = collect();
+      const next = index + delta;
+      const last = state.catalog.intents.length - 1;
+      if (state.catalog.intents[index].id === 'unknown') return;
+      if (next < 0 || next >= last) return;
+      const [item] = state.catalog.intents.splice(index, 1);
+      state.catalog.intents.splice(next, 0, item);
+      renderIntents();
+    }
+
+    function escapeAttr(value) {
+      return String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+    function escapeText(value) {
+      return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    }
+
+    async function preview() {
+      const text = $('previewInput').value.trim();
+      if (!text) return;
+      const result = await api('/api/preview', {
+        method: 'POST',
+        body: JSON.stringify({ text, catalog: collect() })
+      });
+      setBox($('previewDm'), result.dm);
+      setBox($('previewComment'), result.comment);
+      $('previewMeta').textContent = `Intención: ${result.intent}${result.handoff ? ' · deriva a un humano' : ''}`;
+    }
+
+    async function load() {
+      const data = await api('/api/replies');
+      state.catalog = data.catalog;
+      state.meta = data.meta;
+      $('privateNotice').value = data.catalog.extras.privateCommentNotice;
+      $('privateSuffix').value = data.catalog.extras.privateReplySuffix;
+      renderPills();
+      renderIntents();
+      $('app').classList.remove('hidden');
+      $('savebar').classList.remove('hidden');
+      $('login').classList.add('hidden');
+    }
+
+    async function boot() {
+      try {
+        const session = await fetch('/api/session', { headers: headers() }).then((r) => r.json());
+        if (session.ok) return load();
+        $('login').classList.remove('hidden');
+        if (!session.authRequired) {
+          $('loginError').textContent = 'Este panel solo está abierto en localhost. Configurá ADMIN_TOKEN para usarlo en un servidor.';
+          $('loginError').classList.remove('hidden');
+        }
+      } catch (err) {
+        $('login').classList.remove('hidden');
+        $('loginError').textContent = err.message;
+        $('loginError').classList.remove('hidden');
+      }
+    }
+
+    $('loginForm').onsubmit = async (event) => {
+      event.preventDefault();
+      state.token = $('token').value.trim();
+      sessionStorage.setItem('lupoAdminToken', state.token);
+      try {
+        await load();
+      } catch (err) {
+        $('loginError').textContent = err.message;
+        $('loginError').classList.remove('hidden');
+      }
+    };
+
+    $('previewBtn').onclick = () => preview().catch((err) => {
+      $('previewMeta').textContent = err.message;
+    });
+    $('previewInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        $('previewBtn').click();
+      }
+    });
+
+    $('addIntent').onclick = () => {
+      const label = $('newIntentLabel').value.trim();
+      if (!label) {
+        $('saveStatus').textContent = 'Escribí un nombre para la nueva intención.';
+        $('saveStatus').className = 'status err';
+        return;
+      }
+      const id = label.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || `nuevo-${Date.now()}`;
+      state.catalog = collect();
+      if (state.catalog.intents.some((intent) => intent.id === id)) {
+        $('saveStatus').textContent = 'Ya existe una intención con ese nombre.';
+        $('saveStatus').className = 'status err';
+        return;
+      }
+      const unknownAt = state.catalog.intents.findIndex((intent) => intent.id === 'unknown');
+      state.catalog.intents.splice(unknownAt === -1 ? state.catalog.intents.length : unknownAt, 0, {
+        id, label, description: '', handoff: false, keywords: ['consulta'], dm: '¡Hola! 💙 ', comment: '¡Hola! 💙 '
+      });
+      $('newIntentLabel').value = '';
+      renderIntents();
+    };
+
+    $('saveBtn').onclick = async () => {
+      $('saveStatus').textContent = 'Guardando…';
+      $('saveStatus').className = 'status';
+      try {
+        const saved = await api('/api/replies', { method: 'PUT', body: JSON.stringify(collect()) });
+        state.catalog = saved.catalog;
+        renderIntents();
+        $('saveStatus').textContent = 'Guardado. El bot ya usa estos textos.';
+        $('saveStatus').className = 'status ok';
+      } catch (err) {
+        $('saveStatus').textContent = err.message;
+        $('saveStatus').className = 'status err';
+      }
+    };
+
+    boot();
+  </script>
+</body>
+</html>
