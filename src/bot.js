@@ -25,17 +25,20 @@ function isSelf(event, config) {
 export async function processEvent(event, config, send = graphPost) {
   cleanExpired();
   if (!['facebook', 'instagram'].includes(event.platform) || !['comment', 'message'].includes(event.kind) ||
-      !event.accountId || !event.id || !event.text || isSelf(event, config)) return { action: 'ignored' };
+      !event.id || !event.text || isSelf(event, config)) return { action: 'ignored' };
 
   // Only handle events for accounts explicitly configured in this project.
   const expected = event.platform === 'instagram' ? config.igUserId : config.fbPageId;
-  if (!expected || event.accountId !== String(expected)) {
-    console.log(`[BOT] ignored_account platform=${event.platform} got=${event.accountId} expected=${expected}`);
+  // Instagram sometimes sends entry.id = "0"; in this single-account bot we still accept it.
+  if (!expected || (event.accountId && event.accountId !== String(expected))) {
+    console.log(`[BOT] ignored_account platform=${event.platform} got=${event.accountId || '0'} expected=${expected}`);
     return { action: 'ignored_account' };
   }
-  const key = `${event.platform}:${event.kind}:${event.accountId}:${event.id}`;
+  if (event.platform === 'facebook' && !event.accountId) return { action: 'ignored_account' };
+  const accountId = event.accountId || String(expected);
+  const key = `${event.platform}:${event.kind}:${accountId}:${event.id}`;
   if (recent.has(key) || inFlight.has(key)) return { action: 'duplicate' };
-  const customerKey = `${event.platform}:${event.accountId}:${event.senderId}`;
+  const customerKey = `${event.platform}:${accountId}:${event.senderId}`;
   if (event.kind === 'message' && paused.has(customerKey)) return { action: 'human_paused' };
 
   // If delivery was delayed beyond the standard messaging window, avoid a proactive reply.

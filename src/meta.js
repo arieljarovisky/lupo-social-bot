@@ -39,10 +39,15 @@ export function verifySignature(rawBody, header, appSecret) {
   return signatureProblem(rawBody, header, appSecret) === null;
 }
 
+function usableAccountId(id) {
+  const value = String(id ?? '');
+  return !value || value === '0' ? '' : value;
+}
+
 export function extractEvents(payload) {
   const events = [];
   for (const entry of payload?.entry ?? []) {
-    const accountId = String(entry.id ?? '');
+    const accountId = usableAccountId(entry.id);
     for (const message of entry.messaging ?? []) {
       // No echoes, reactions, delivery/read confirmations or messages sent by ourselves.
       if (!message.message?.text || message.message.is_echo || !message.sender?.id ||
@@ -63,9 +68,10 @@ export function extractEvents(payload) {
         const value = change.value ?? {};
         const commentId = value.id || value.comment_id;
         const text = value.text || value.message;
-        const mediaId = String(value.media?.id ?? '');
+        const mediaId = String(value.media?.id ?? value.media_id ?? '');
         const parentId = value.parent_id ? String(value.parent_id) : '';
-        const isReply = Boolean(parentId) && parentId !== mediaId && parentId !== accountId && parentId !== String(commentId ?? '');
+        // Only treat as a thread reply when we can tell parent is another comment, not the post.
+        const isReply = Boolean(parentId && mediaId && parentId !== mediaId);
         if (!commentId || !text) {
           console.log('[WEBHOOK] comment IG sin id o texto');
           continue;

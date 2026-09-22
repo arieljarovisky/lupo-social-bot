@@ -40,7 +40,7 @@ test('extrae DMs/comentarios en ambas redes y descarta ecos y respuestas anidada
   ], changes: [{ field: 'feed', value: { item: 'comment', verb: 'add', comment_id: 'f1', message: 'precio', from: { id: 'c1' } } }] }] });
   const ig = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', changes: [
     { field: 'comments', value: { id: 'i1', text: 'Precio', from: { id: 'c1' } } },
-    { field: 'comments', value: { id: 'i2', text: 'Respuesta', parent_id: 'i1', from: { id: 'c1' } } }
+    { field: 'comments', value: { id: 'i2', text: 'Respuesta', parent_id: 'i1', media: { id: 'm1' }, from: { id: 'c1' } } }
   ] }] });
   const igFlat = extractEvents({ object: 'instagram', entry: [{
     id: 'ig123', field: 'comments',
@@ -48,7 +48,11 @@ test('extrae DMs/comentarios en ambas redes y descarta ecos y respuestas anidada
   }] });
   assert.deepEqual(fb.map((x) => x.id), ['m1', 'f1']);
   assert.deepEqual(igFlat.map((x) => x.id), ['i3']);
+  const igZero = extractEvents({ object: 'instagram', entry: [{
+    id: '0', time: 1, changes: [{ field: 'comments', value: { id: 'i4', text: 'precio', parent_id: '999', from: { id: 'c1' } } }]
+  }] });
   assert.deepEqual(ig.map((x) => x.id), ['i1']);
+  assert.deepEqual(igZero.map((x) => x.id), ['i4']);
 });
 
 test('DM usa endpoint y evita duplicados; reclamos pausan respuestas del mismo cliente', async () => {
