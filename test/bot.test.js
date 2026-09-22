@@ -76,6 +76,15 @@ test('mensajes simultáneos con mismo ID no generan envíos duplicados', async (
   assert.deepEqual(results.map((r) => r.action).sort(), ['dm_wholesale', 'duplicate']);
 });
 
+test('acepta el ID clásico y el de Instagram Login de la misma cuenta', async () => {
+  resetTestState();
+  const send = async () => ({ id: 'ok' });
+  const dual = { ...cfg, igUserId: '38485506321095650,17841435502901961' };
+  const event = { platform: 'instagram', kind: 'comment', accountId: '17841435502901961',
+    id: 'i20', senderId: 'c2', text: 'Precio' };
+  assert.equal((await processEvent(event, dual, send)).action, 'comment_price');
+});
+
 test('comentarios usan rutas distintas y no responden cuando no hay keyword', async () => {
   resetTestState(); const sent = [];
   const send = async (req) => { sent.push(req); return { id: 'ok' }; };

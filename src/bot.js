@@ -14,9 +14,13 @@ function cleanExpired(now = Date.now()) {
   for (const [key, until] of privateAttempts) if (until <= now) privateAttempts.delete(key);
 }
 
+function idList(value) {
+  return String(value ?? '').split(/[,\s]+/).map((item) => item.trim()).filter(Boolean);
+}
+
 function isSelf(event, config) {
-  const ours = event.platform === 'instagram' ? config.igUserId : config.fbPageId;
-  if (ours && event.senderId && String(event.senderId) === String(ours)) return true;
+  const ours = event.platform === 'instagram' ? idList(config.igUserId) : idList(config.fbPageId);
+  if (event.senderId && ours.includes(String(event.senderId))) return true;
   if (event.platform === 'instagram' && config.igUsername && event.username &&
       event.username.toLowerCase() === config.igUsername.toLowerCase()) return true;
   return false;
@@ -27,15 +31,17 @@ export async function processEvent(event, config, send = graphPost) {
   if (!['facebook', 'instagram'].includes(event.platform) || !['comment', 'message'].includes(event.kind) ||
       !event.id || !event.text || isSelf(event, config)) return { action: 'ignored' };
 
-  // Only handle events for accounts explicitly configured in this project.
-  const expected = event.platform === 'instagram' ? config.igUserId : config.fbPageId;
-  // Instagram sometimes sends entry.id = "0"; in this single-account bot we still accept it.
-  if (!expected || (event.accountId && event.accountId !== String(expected))) {
-    console.log(`[BOT] ignored_account platform=${event.platform} got=${event.accountId || '0'} expected=${expected}`);
+  // Instagram Login and the classic IG ID are both valid for the same account.
+  const expectedIds = event.platform === 'instagram' ? idList(config.igUserId) : idList(config.fbPageId);
+  const expected = expectedIds[0] || '';
+  const incoming = String(event.accountId || '');
+  const accountKnown = incoming && incoming !== '0' ? expectedIds.includes(incoming) : event.platform === 'instagram';
+  if (!expected || !accountKnown) {
+    console.log(`[BOT] ignored_account platform=${event.platform} got=${incoming || '0'} expected=${expectedIds.join(',')}`);
     return { action: 'ignored_account' };
   }
-  if (event.platform === 'facebook' && !event.accountId) return { action: 'ignored_account' };
-  const accountId = event.accountId || String(expected);
+  if (event.platform === 'facebook' && !incoming) return { action: 'ignored_account' };
+  const accountId = incoming && incoming !== '0' ? incoming : expected;
   const key = `${event.platform}:${event.kind}:${accountId}:${event.id}`;
   if (recent.has(key) || inFlight.has(key)) return { action: 'duplicate' };
   const customerKey = `${event.platform}:${accountId}:${event.senderId}`;
