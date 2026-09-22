@@ -168,6 +168,10 @@ app.post('/api/preview', requireAdmin, (req, res) => {
 });
 
 app.get('/admin', (_req, res) => res.sendFile(join(publicDir, 'admin.html')));
+app.get('/privacy', (_req, res) => res.sendFile(join(publicDir, 'privacy.html')));
+app.get('/terms', (_req, res) => res.sendFile(join(publicDir, 'terms.html')));
+app.get('/data-deletion', (_req, res) => res.sendFile(join(publicDir, 'data-deletion.html')));
+app.get('/legal.css', (_req, res) => res.sendFile(join(publicDir, 'legal.css')));
 app.get('/', (_req, res) => res.redirect('/admin'));
 
 // Local-only simulator: never deployed publicly as it gives away reply logic.
