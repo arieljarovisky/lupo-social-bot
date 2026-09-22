@@ -34,17 +34,26 @@ app.get('/webhook', (req, res) => {
 });
 
 // MUST keep the body raw for HMAC validation; do not use express.json() before this route.
-app.post('/webhook', express.raw({ type: 'application/json', limit: '256kb' }), (req, res) => {
-  const problem = signatureProblem(req.body, req.get('x-hub-signature-256'), env.META_APP_SECRET);
+app.post('/webhook', express.raw({ type: () => true, limit: '256kb' }), (req, res) => {
+  const header = req.get('x-hub-signature-256') || req.get('x-hub-signature') || '';
+  const problem = signatureProblem(req.body, header, env.META_APP_SECRET);
   if (problem) {
     const detail = {
       missing_secret: 'falta META_APP_SECRET en Railway',
       empty_body: 'el body llegó vacío',
       missing_header: 'no vino X-Hub-Signature-256',
       bad_header: 'X-Hub-Signature-256 no tiene formato sha256',
-      mismatch: 'META_APP_SECRET no coincide con el App Secret de la app que envía el webhook'
+      mismatch: 'firma no válida (el test de Meta suele fallar; un comentario real es la prueba)'
     }[problem] || problem;
-    console.log(`[WEBHOOK] POST rechazado: ${detail}`);
+    let peek = '';
+    try {
+      const parsed = JSON.parse(Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '{}');
+      const fields = (parsed.entry ?? []).flatMap((entry) => (entry.changes ?? []).map((change) => change.field));
+      peek = ` object=${parsed.object ?? 'sin-object'} fields=${fields.join(',') || '-'} bytes=${req.body?.length ?? 0}`;
+    } catch {
+      peek = ` bytes=${req.body?.length ?? 0} ctype=${req.get('content-type') || '-'}`;
+    }
+    console.log(`[WEBHOOK] POST rechazado: ${detail}${peek}`);
     return res.sendStatus(403);
   }
   let payload;

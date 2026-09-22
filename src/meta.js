@@ -4,16 +4,35 @@ export function cleanSecret(value) {
   return String(value ?? '').trim().replace(/^['"]+|['"]+$/g, '');
 }
 
+/** Meta signs an escaped-unicode form of the JSON, with lowercase \uXXXX. */
+export function escapeUnicodeForMeta(text) {
+  return String(text).replace(/[\u007f-\uffff]/g, (ch) =>
+    `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
+function hmacHex(secret, value) {
+  return createHmac('sha256', secret).update(value).digest('hex');
+}
+
+function sameHash(expected, actual) {
+  return expected.length === actual.length && timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+}
+
 export function signatureProblem(rawBody, header, appSecret) {
   const secret = cleanSecret(appSecret);
   if (!secret) return 'missing_secret';
   if (!Buffer.isBuffer(rawBody) || !rawBody.length) return 'empty_body';
   if (typeof header !== 'string' || !header) return 'missing_header';
   if (!/^sha256=[a-f0-9]{64}$/i.test(header)) return 'bad_header';
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
   const actual = header.slice(7).toLowerCase();
-  if (expected.length !== actual.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) return 'mismatch';
-  return null;
+  const utf8 = rawBody.toString('utf8');
+  const expected = [
+    hmacHex(secret, rawBody),
+    hmacHex(secret, utf8),
+    hmacHex(secret, escapeUnicodeForMeta(utf8))
+  ];
+  if (expected.some((hash) => sameHash(hash, actual))) return null;
+  return 'mismatch';
 }
 
 export function verifySignature(rawBody, header, appSecret) {
@@ -40,7 +59,18 @@ export function extractEvents(payload) {
       for (const change of entry.changes ?? []) {
         if (change.field !== 'comments') continue;
         const value = change.value ?? {};
-        if (!value.id || !value.text || value.parent_id || String(value.from?.id ?? '') === accountId) continue;
+        if (!value.id || !value.text) {
+          console.log('[WEBHOOK] comment IG sin id o texto');
+          continue;
+        }
+        if (value.parent_id) {
+          console.log('[WEBHOOK] comment IG anidado ignorado');
+          continue;
+        }
+        if (String(value.from?.id ?? '') === accountId) {
+          console.log('[WEBHOOK] comment IG propio ignorado (no respondemos a lupoargentina)');
+          continue;
+        }
         events.push({ platform: 'instagram', kind: 'comment', accountId,
           senderId: String(value.from?.id ?? ''), username: value.from?.username ?? '',
           id: String(value.id), text: value.text, timestamp: Date.now() });

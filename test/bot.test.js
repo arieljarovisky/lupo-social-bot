@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, resetCatalog, previewFor } from '../src/replies.js';
-import { verifySignature, extractEvents, graphPost } from '../src/meta.js';
+import { verifySignature, extractEvents, graphPost, escapeUnicodeForMeta } from '../src/meta.js';
 import { processEvent, resetTestState } from '../src/bot.js';
 
 const cfg = { igUserId: 'ig123', fbPageId: 'page123', igAccessToken: 'IG_TEST',
@@ -27,6 +27,10 @@ test('verifica HMAC sobre body raw, rechaza firmas incorrectas', () => {
   assert.equal(verifySignature(body, header, '"secret"'), true);
   assert.equal(verifySignature(Buffer.from('{}'), header, 'secret'), false);
   assert.equal(verifySignature(body, undefined, 'secret'), false);
+  const unicode = Buffer.from('{"text":"precio á"}');
+  const escaped = escapeUnicodeForMeta(unicode.toString('utf8'));
+  const unicodeHeader = 'sha256=' + createHmac('sha256', 'secret').update(escaped).digest('hex');
+  assert.equal(verifySignature(unicode, unicodeHeader, 'secret'), true);
 });
 
 test('extrae DMs/comentarios en ambas redes y descarta ecos y respuestas anidadas', () => {
