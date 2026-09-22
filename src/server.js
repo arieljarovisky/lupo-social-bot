@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { verifySignature, extractEvents } from './meta.js';
+import { signatureProblem, extractEvents, cleanSecret } from './meta.js';
 import { processEvent } from './bot.js';
 import { answerFor, publicCommentFor, getCatalog, setCatalog, previewFor } from './replies.js';
 
@@ -23,7 +23,8 @@ app.get('/health', (_, res) => res.json({ ok: true, simulation: config.dryRun })
 
 app.get('/webhook', (req, res) => {
   const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
-  if (mode === 'subscribe' && env.META_VERIFY_TOKEN && token === env.META_VERIFY_TOKEN &&
+  const verifyToken = cleanSecret(env.META_VERIFY_TOKEN);
+  if (mode === 'subscribe' && verifyToken && token === verifyToken &&
       typeof challenge === 'string') {
     console.log('[WEBHOOK] handshake ok');
     return res.status(200).type('text/plain').send(challenge);
@@ -34,8 +35,16 @@ app.get('/webhook', (req, res) => {
 
 // MUST keep the body raw for HMAC validation; do not use express.json() before this route.
 app.post('/webhook', express.raw({ type: 'application/json', limit: '256kb' }), (req, res) => {
-  if (!verifySignature(req.body, req.get('x-hub-signature-256'), env.META_APP_SECRET)) {
-    console.log('[WEBHOOK] POST rechazado: firma HMAC inválida o falta META_APP_SECRET');
+  const problem = signatureProblem(req.body, req.get('x-hub-signature-256'), env.META_APP_SECRET);
+  if (problem) {
+    const detail = {
+      missing_secret: 'falta META_APP_SECRET en Railway',
+      empty_body: 'el body llegó vacío',
+      missing_header: 'no vino X-Hub-Signature-256',
+      bad_header: 'X-Hub-Signature-256 no tiene formato sha256',
+      mismatch: 'META_APP_SECRET no coincide con el App Secret de la app que envía el webhook'
+    }[problem] || problem;
+    console.log(`[WEBHOOK] POST rechazado: ${detail}`);
     return res.sendStatus(403);
   }
   let payload;

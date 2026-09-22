@@ -24,6 +24,7 @@ test('verifica HMAC sobre body raw, rechaza firmas incorrectas', () => {
   const body = Buffer.from('{"object":"page"}');
   const header = 'sha256=' + createHmac('sha256', 'secret').update(body).digest('hex');
   assert.equal(verifySignature(body, header, 'secret'), true);
+  assert.equal(verifySignature(body, header, '"secret"'), true);
   assert.equal(verifySignature(Buffer.from('{}'), header, 'secret'), false);
   assert.equal(verifySignature(body, undefined, 'secret'), false);
 });

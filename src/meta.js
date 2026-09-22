@@ -1,10 +1,23 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export function verifySignature(rawBody, header, appSecret) {
-  if (!Buffer.isBuffer(rawBody) || !appSecret || typeof header !== 'string' || !/^sha256=[a-f0-9]{64}$/i.test(header)) return false;
-  const expected = createHmac('sha256', appSecret).update(rawBody).digest('hex');
+export function cleanSecret(value) {
+  return String(value ?? '').trim().replace(/^['"]+|['"]+$/g, '');
+}
+
+export function signatureProblem(rawBody, header, appSecret) {
+  const secret = cleanSecret(appSecret);
+  if (!secret) return 'missing_secret';
+  if (!Buffer.isBuffer(rawBody) || !rawBody.length) return 'empty_body';
+  if (typeof header !== 'string' || !header) return 'missing_header';
+  if (!/^sha256=[a-f0-9]{64}$/i.test(header)) return 'bad_header';
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
   const actual = header.slice(7).toLowerCase();
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+  if (expected.length !== actual.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) return 'mismatch';
+  return null;
+}
+
+export function verifySignature(rawBody, header, appSecret) {
+  return signatureProblem(rawBody, header, appSecret) === null;
 }
 
 export function extractEvents(payload) {
