@@ -67,6 +67,29 @@ test('DM usa endpoint y evita duplicados; reclamos pausan respuestas del mismo c
   assert.equal(sent.length, 2);
 });
 
+test('DM cooldown evita otra auto-respuesta al mismo cliente; handoff sí pasa', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const base = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c3' };
+  assert.equal((await processEvent({ ...base, id: 'c1', text: 'hola' }, cfg, send)).action, 'dm_unknown');
+  assert.equal((await processEvent({ ...base, id: 'c2', text: 'cómo estás?' }, cfg, send)).action, 'dm_cooldown');
+  assert.equal((await processEvent({ ...base, id: 'c3', text: 'quiero hablar con un asesor' }, cfg, send)).action, 'dm_handoff');
+  assert.equal(sent.length, 2);
+  // Otro usuario no queda bloqueado por el cooldown del primero.
+  assert.equal((await processEvent({ ...base, id: 'c4', senderId: 'c4', text: 'hola' }, cfg, send)).action, 'dm_unknown');
+  assert.equal(sent.length, 3);
+});
+
+test('DM_COOLDOWN_HOURS=0 desactiva el cooldown por conversación', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const off = { ...cfg, dmCooldownHours: 0 };
+  const base = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c5' };
+  assert.equal((await processEvent({ ...base, id: 'd1', text: 'hola' }, off, send)).action, 'dm_unknown');
+  assert.equal((await processEvent({ ...base, id: 'd2', text: 'hola de nuevo' }, off, send)).action, 'dm_unknown');
+  assert.equal(sent.length, 2);
+});
+
 test('mensajes simultáneos con mismo ID no generan envíos duplicados', async () => {
   resetTestState(); let calls = 0;
   const event = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c9', id: 'm99', text: 'Mayorista' };

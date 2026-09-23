@@ -5,13 +5,26 @@ const recent = new Map();
 const inFlight = new Set();
 const privateAttempts = new Map();
 const paused = new Map();
+const dmCooldown = new Map();
 const DEDUP_MS = 48 * 3600 * 1000;
 const HANDOFF_PAUSE_MS = 24 * 3600 * 1000;
+const DEFAULT_DM_COOLDOWN_MS = 24 * 3600 * 1000;
 
 function cleanExpired(now = Date.now()) {
   for (const [key, until] of recent) if (until <= now) recent.delete(key);
   for (const [key, until] of paused) if (until <= now) paused.delete(key);
   for (const [key, until] of privateAttempts) if (until <= now) privateAttempts.delete(key);
+  for (const [key, until] of dmCooldown) if (until <= now) dmCooldown.delete(key);
+}
+
+/** Hours from config; 0 disables. Default 24h when unset. */
+function dmCooldownMs(config) {
+  const raw = config?.dmCooldownHours;
+  if (raw === 0 || raw === '0') return 0;
+  if (raw == null || raw === '') return DEFAULT_DM_COOLDOWN_MS;
+  const hours = Number(raw);
+  if (!Number.isFinite(hours) || hours < 0) return DEFAULT_DM_COOLDOWN_MS;
+  return hours * 3600 * 1000;
 }
 
 function idList(value) {
@@ -58,15 +71,22 @@ export async function processEvent(event, config, send = graphPost) {
     const token = event.platform === 'instagram' ? config.igAccessToken : config.fbPageAccessToken;
   const common = { platform: event.platform, accountId: expected, token, version: config.apiVersion, dryRun: config.dryRun };
   const result = answerFor(event.text, opts);
+  const coolMs = dmCooldownMs(config);
   let action;
 
   if (event.kind === 'message') {
+    // One auto-reply per conversation window; claims/handoff still get through.
+    if (coolMs > 0 && !result.handoff && dmCooldown.has(customerKey)) {
+      recent.set(key, Date.now() + DEDUP_MS);
+      return { action: 'dm_cooldown' };
+    }
     await send({ ...common, body: {
       recipient: { id: event.senderId },
       messaging_type: event.platform === 'facebook' ? 'RESPONSE' : undefined,
       message: { text: result.text }
     }});
     action = `dm_${result.intent}`;
+    if (coolMs > 0) dmCooldown.set(customerKey, Date.now() + coolMs);
     if (result.handoff) {
       paused.set(customerKey, Date.now() + HANDOFF_PAUSE_MS);
       // The existing Meta inbox is the human handoff interface. No external notification is sent.
@@ -104,4 +124,6 @@ export async function processEvent(event, config, send = graphPost) {
   }
 }
 
-export function resetTestState() { recent.clear(); paused.clear(); inFlight.clear(); privateAttempts.clear(); }
+export function resetTestState() {
+  recent.clear(); paused.clear(); inFlight.clear(); privateAttempts.clear(); dmCooldown.clear();
+}
