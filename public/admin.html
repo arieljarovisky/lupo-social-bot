@@ -148,7 +148,7 @@
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <div>
           <h2>Posts con productos</h2>
-          <p class="hint">Asociá el ID de un post de Instagram a una URL de producto. Cuando alguien comenta en ese post, el link del producto se incluye en el DM privado.</p>
+          <p class="hint">Asociá un post de Instagram a un producto y escribí la respuesta de ese post. Si alguien comenta ahí, el DM privado usa ese texto y no la respuesta automática. Hace falta <code>IG_PRIVATE_REPLIES=true</code>.</p>
         </div>
       </div>
       <div class="card" style="margin-bottom:16px">
@@ -166,6 +166,11 @@
         <div style="margin-bottom:12px">
           <label for="newProductUrl">URL del producto</label>
           <input id="newProductUrl" placeholder="https://lupo.ar/productos/boxer-clasico">
+        </div>
+        <div style="margin-bottom:12px">
+          <label for="newReply">Respuesta de este post</label>
+          <textarea id="newReply" placeholder="¡Hola! 💙 En este post está el {{nombre}}. Lo ves acá: {{url}}"></textarea>
+          <p class="hint">Variables: <code>{{nombre}}</code>, <code>{{url}}</code>, <code>{{store}}</code> y <code>{{whatsapp}}</code>. Dejá un espacio antes de cada una.</p>
         </div>
         <label class="check" style="margin-bottom:12px">
           <input id="newEnabled" type="checkbox" checked> Habilitado
@@ -391,6 +396,10 @@
               <input class="productName" value="${escapeAttr(m.productName)}">
             </div>
           </div>
+          <div style="margin-bottom:12px">
+            <label>Respuesta de este post</label>
+            <textarea class="reply">${escapeText(m.reply || '')}</textarea>
+          </div>
           <div class="row" style="justify-content:space-between">
             <label class="check">
               <input class="mappingEnabled" type="checkbox" ${m.enabled ? 'checked' : ''}> Habilitado
@@ -417,11 +426,17 @@
         card.querySelector('.save-mapping').onclick = async () => {
           const productUrl = card.querySelector('.productUrl').value.trim();
           const productName = card.querySelector('.productName').value.trim();
+          const reply = card.querySelector('.reply').value.trim();
           const enabled = card.querySelector('.mappingEnabled').checked;
+          if (!reply) {
+            $('mappingsStatus').textContent = 'Escribí la respuesta de este post.';
+            $('mappingsStatus').className = 'hint err';
+            return;
+          }
           try {
             const result = await api(`/api/media-products/${encodeURIComponent(mediaId)}`, {
               method: 'PUT',
-              body: JSON.stringify({ productUrl, productName, enabled })
+              body: JSON.stringify({ productUrl, productName, reply, enabled })
             });
             const index = state.mappings.findIndex((m) => m.mediaId === mediaId);
             if (index !== -1) state.mappings[index] = result.mapping;
@@ -544,22 +559,24 @@
       const mediaId = $('newMediaId').value.trim();
       const productName = $('newProductName').value.trim();
       const productUrl = $('newProductUrl').value.trim();
+      const reply = $('newReply').value.trim();
       const enabled = $('newEnabled').checked;
-      if (!mediaId || !productName || !productUrl) {
-        $('mappingsStatus').textContent = 'Completá todos los campos.';
+      if (!mediaId || !productName || !productUrl || !reply) {
+        $('mappingsStatus').textContent = 'Completá todos los campos, incluida la respuesta del post.';
         $('mappingsStatus').className = 'hint err';
         return;
       }
       try {
         const result = await api('/api/media-products', {
           method: 'POST',
-          body: JSON.stringify({ mediaId, productName, productUrl, enabled })
+          body: JSON.stringify({ mediaId, productName, productUrl, reply, enabled })
         });
         state.mappings.push(result.mapping);
         renderMappings();
         $('newMediaId').value = '';
         $('newProductName').value = '';
         $('newProductUrl').value = '';
+        $('newReply').value = '';
         $('newEnabled').checked = true;
         $('mappingsStatus').textContent = 'Mapeo agregado.';
         $('mappingsStatus').className = 'hint';

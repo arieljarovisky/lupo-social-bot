@@ -331,3 +331,28 @@ test('IG comment with mapped product sends product link even without keyword mat
 
   resetMappings({ persist: false });
 });
+
+test('IG comment on a mapped post uses that post reply instead of the automatic one', async () => {
+  resetTestState();
+  resetMappings({ persist: false });
+  addMapping({
+    mediaId: '17900000000000004',
+    productUrl: 'https://lupo.ar/productos/boxer',
+    productName: 'Boxer Clásico',
+    reply: '¡Hola! 💙 Este post es del {{nombre}}. Lo ves acá: {{url}}'
+  }, { persist: false });
+
+  const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const event = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'comment3', senderId: 'user1', text: 'Precio',
+    mediaId: '17900000000000004'
+  };
+  const result = await processEvent(event, { ...cfg, igPrivateReplies: true }, send);
+  assert.equal(result.action, 'comment_price_private');
+  assert.equal(sent[0].body.message.text, '¡Hola! 💙 Este post es del Boxer Clásico. Lo ves acá: https://lupo.ar/productos/boxer');
+  assert.doesNotMatch(sent[0].body.message.text, /tienda|whatsapp|cuánto/i);
+
+  resetMappings({ persist: false });
+});

@@ -7,6 +7,7 @@ const MEDIA_ID_RE = /^\d{10,25}$/;
 const URL_RE = /^https?:\/\/.+/;
 const MAX_MAPPINGS = 500;
 const MAX_NAME_LENGTH = 120;
+const MAX_REPLY = 800;
 
 const DEFAULTS = { version: 1, mappings: [] };
 
@@ -57,10 +58,12 @@ export function validateStore(input) {
     if (!productName) {
       throw new Error(`El nombre del producto está vacío (posición ${index + 1}).`);
     }
+    const reply = String(raw.reply ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_REPLY);
     return {
       mediaId,
       productUrl,
       productName,
+      reply,
       enabled: raw.enabled !== false
     };
   });
@@ -75,7 +78,9 @@ export function getProductForMedia(mediaId) {
   if (!mediaId) return null;
   const id = String(mediaId).trim();
   const mapping = store.mappings.find((m) => m.mediaId === id && m.enabled);
-  return mapping ? { productUrl: mapping.productUrl, productName: mapping.productName } : null;
+  return mapping
+    ? { productUrl: mapping.productUrl, productName: mapping.productName, reply: mapping.reply || '' }
+    : null;
 }
 
 export function addMapping(data, { persist: shouldPersist = true } = {}) {

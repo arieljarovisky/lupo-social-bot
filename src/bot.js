@@ -32,6 +32,19 @@ function idList(value) {
   return String(value ?? '').split(/[,\s]+/).map((item) => item.trim()).filter(Boolean);
 }
 
+function renderMappingReply(product, opts) {
+  const store = String(opts.storeUrl || 'https://lupo.ar').replace(/\/+$/, '');
+  const whatsapp = /^\d{10,15}$/.test(String(opts.whatsappNumber || ''))
+    ? `https://wa.me/${opts.whatsappNumber}`
+    : 'este mismo chat';
+  return String(product.reply)
+    .replace(/(\S)\{\{(store|whatsapp|nombre|url)\}\}/g, '$1 {{$2}}')
+    .replaceAll('{{store}}', store)
+    .replaceAll('{{whatsapp}}', whatsapp)
+    .replaceAll('{{nombre}}', product.productName)
+    .replaceAll('{{url}}', product.productUrl);
+}
+
 function isSelf(event, config) {
   const ours = event.platform === 'instagram' ? idList(config.igUserId) : idList(config.fbPageId);
   if (event.senderId && ours.includes(String(event.senderId))) return true;
@@ -101,7 +114,9 @@ export async function processEvent(event, config, send = graphPost) {
     let privateSent = false;
     if (event.platform === 'instagram' && config.igPrivateReplies && !privateAttempts.has(key)) {
       let privateText = privateReplyFor(event.text, opts);
-      if (product && privateText) {
+      if (product?.reply) {
+        privateText = renderMappingReply(product, opts);
+      } else if (product && privateText) {
         privateText = `${privateText}\n\n🛒 ${product.productName}: ${product.productUrl}`;
       } else if (product && !privateText) {
         privateText = `¡Hola! 💙 Acá tenés el link del producto:\n\n🛒 ${product.productName}: ${product.productUrl}`;
