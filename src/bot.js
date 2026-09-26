@@ -1,5 +1,6 @@
 import { answerFor, publicCommentFor, privateReplyFor, privateCommentNotice } from './replies.js';
 import { graphPost } from './meta.js';
+import { getProductForMedia } from './media-products.js';
 
 const recent = new Map();
 const inFlight = new Set();
@@ -94,11 +95,17 @@ export async function processEvent(event, config, send = graphPost) {
     }
   } else {
     const text = publicCommentFor(event.text, opts);
-    if (!text) return { action: 'comment_without_keyword' };
+    const product = event.mediaId ? getProductForMedia(event.mediaId) : null;
+    if (!text && !product) return { action: 'comment_without_keyword' };
     // Optional IG private reply before public reply. Exactly one attempt per comment.
     let privateSent = false;
     if (event.platform === 'instagram' && config.igPrivateReplies && !privateAttempts.has(key)) {
-      const privateText = privateReplyFor(event.text, opts);
+      let privateText = privateReplyFor(event.text, opts);
+      if (product && privateText) {
+        privateText = `${privateText}\n\n🛒 ${product.productName}: ${product.productUrl}`;
+      } else if (product && !privateText) {
+        privateText = `¡Hola! 💙 Acá tenés el link del producto:\n\n🛒 ${product.productName}: ${product.productUrl}`;
+      }
       if (privateText) {
         try {
           // Mark BEFORE sending: delivery may have succeeded even if a timeout occurs.
@@ -112,8 +119,10 @@ export async function processEvent(event, config, send = graphPost) {
       }
     }
     const path = event.platform === 'instagram' ? `${event.id}/replies` : `${event.id}/comments`;
-    await send({ ...common, path, body: { message: privateSent
-      ? privateCommentNotice(event.id) : text } });
+    const publicMessage = privateSent ? privateCommentNotice(event.id) : text;
+    if (publicMessage) {
+      await send({ ...common, path, body: { message: publicMessage } });
+    }
     action = `comment_${result.intent}${privateSent ? '_private' : ''}`;
   }
   // Mark only after successful API delivery (in DRY_RUN after successful simulation).

@@ -5,6 +5,7 @@ import express from 'express';
 import { signatureProblem, extractEvents, cleanSecret } from './meta.js';
 import { processEvent } from './bot.js';
 import { answerFor, publicCommentFor, getCatalog, setCatalog, previewFor } from './replies.js';
+import { getMappings, addMapping, updateMapping, deleteMapping } from './media-products.js';
 
 const env = process.env;
 const config = {
@@ -166,6 +167,34 @@ app.post('/api/preview', requireAdmin, (req, res) => {
     res.status(400).json({ error: err.message });
   } finally {
     if (req.body?.catalog) setCatalog(previous, { persist: false });
+  }
+});
+
+app.get('/api/media-products', requireAdmin, (_req, res) => {
+  res.json({ mappings: getMappings() });
+});
+app.post('/api/media-products', requireAdmin, (req, res) => {
+  try {
+    const mapping = addMapping(req.body);
+    res.status(201).json({ ok: true, mapping });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+app.put('/api/media-products/:mediaId', requireAdmin, (req, res) => {
+  try {
+    const mapping = updateMapping(req.params.mediaId, req.body);
+    res.json({ ok: true, mapping });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+app.delete('/api/media-products/:mediaId', requireAdmin, (req, res) => {
+  try {
+    const mapping = deleteMapping(req.params.mediaId);
+    res.json({ ok: true, mapping });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
