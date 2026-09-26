@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, resetCatalog, previewFor } from '../src/replies.js';
+import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, resetCatalog, previewFor, privateCommentNotice } from '../src/replies.js';
 import { verifySignature, extractEvents, graphPost, escapeUnicodeForMeta } from '../src/meta.js';
 import { processEvent, resetTestState } from '../src/bot.js';
 
@@ -104,7 +104,7 @@ test('IG private reply sends once, followed by public reply only if enabled', as
   await processEvent(event, { ...cfg, igPrivateReplies: true }, send);
   assert.equal(sent.length, 2);
   assert.equal(sent[0].body.recipient.comment_id, 'i9');
-  assert.equal(sent[1].body.message, '¡Hola! 💙 Te enviamos información por privado.');
+  assert.equal(sent[1].body.message, privateCommentNotice('i9'));
   assert.equal((await processEvent(event, { ...cfg, igPrivateReplies: true }, send)).action, 'duplicate');
 });
 
@@ -122,7 +122,7 @@ test('el catálogo editable cambia comentarios y se puede restaurar', () => {
     price.comment = 'Comentario de prueba para precio.';
     setCatalog(next, { persist: false });
     assert.equal(publicCommentFor('¿precio?'), 'Comentario de prueba para precio.');
-    assert.match(previewFor('precio').privateReply, /Si querés continuar/);
+    assert.match(previewFor('precio').privateReply, /¿Te ayudo con algo más\?/);
     assert.equal(privateReplyFor('Qué lindo'), null);
   } finally {
     resetCatalog({ persist: false });
@@ -135,6 +135,67 @@ test('rechaza un catálogo sin intención unknown o con regex rota', () => {
   const next = getCatalog();
   next.intents.find((intent) => intent.id === 'price').keywords = ['('];
   assert.throws(() => setCatalog(next, { persist: false }));
+});
+
+test('clasifica las consultas de Instagram en la intención pedida', () => {
+  const cases = [
+    ['quiero', 'promo_quiero', false],
+    ['¿dónde está mi pedido?', 'claim', true],
+    ['compré y no me llegó', 'claim', true],
+    ['¿puedo cambiar el talle si no me queda?', 'exchange', false],
+    ['¿tenés envío a Córdoba?', 'shipping', false],
+    ['¿envían al interior?', 'shipping', false],
+    ['precio?', 'price', false],
+    ['info', 'price', false],
+    ['¿cuánto sale el boxer negro?', 'price', false],
+    ['¿hay en L?', 'stock', false],
+    ['¿hay en XL?', 'stock', false],
+    ['¿se puede pagar en cuotas?', 'payment', false],
+    ['¿tienen descuento?', 'promo', false],
+    ['vendo por mayor, ¿tienen lista?', 'wholesale', false],
+    ['quiero hablar con una persona', 'handoff', true],
+    ['😍', 'unknown', false]
+  ];
+  for (const [text, intent, handoff] of cases) {
+    const result = answerFor(text);
+    assert.equal(result.intent, intent, text);
+    assert.equal(result.handoff, handoff, text);
+  }
+  assert.equal(publicCommentFor('😍'), null);
+  assert.equal(publicCommentFor('quiero'), '¡Listo! 💙 Revisá tus mensajes 📩');
+  assert.equal(answerFor('quiero comprar').intent, 'shop');
+  assert.equal(answerFor('lo quiero').intent, 'promo_quiero');
+  assert.equal(answerFor('envío personalizado').intent, 'shipping');
+  assert.equal(answerFor('cambiar el talle').intent, 'exchange');
+  assert.equal(answerFor('¿hay en la tienda?').intent, 'shop');
+  assert.equal(answerFor('uso XL').intent, 'size');
+
+  const opts = { storeUrl: 'https://lupo.ar', whatsappNumber: '5491170590570' };
+  assert.match(answerFor('quiero', opts).text, /en https:\/\/lupo\.ar/);
+  assert.match(answerFor('reclamo', opts).text, /: https:\/\/wa\.me\/5491170590570/);
+  assert.doesNotMatch(answerFor('reclamo', opts).text, /  https:/);
+  assert.doesNotMatch(answerFor('¿se puede pagar en cuotas?', opts).text, /Mercado Pago/i);
+  assert.match(answerFor('¿se puede pagar en cuotas?', opts).text, /tarjeta o transferencia/);
+  assert.doesNotMatch(publicCommentFor('precio') || '', /https?:/);
+  assert.doesNotMatch(publicCommentFor('cuotas') || '', /https?:/);
+});
+
+test('alterna el aviso público y separa links pegados al texto', () => {
+  const seen = new Set();
+  for (let i = 0; i < 40; i++) seen.add(privateCommentNotice(`comentario-${i}`));
+  assert.equal(seen.size, 3);
+
+  const original = getCatalog();
+  try {
+    const next = structuredClone(original);
+    next.intents.find((intent) => intent.id === 'shop').dm = 'Comprá en{{store}}.{{whatsapp}}';
+    setCatalog(next, { persist: false });
+    const text = answerFor('como compro', { storeUrl: 'https://lupo.ar', whatsappNumber: '5491170590570' }).text;
+    assert.match(text, /en https:\/\/lupo\.ar/);
+    assert.match(text, /\. https:\/\/wa\.me\/5491170590570/);
+  } finally {
+    resetCatalog({ persist: false });
+  }
 });
 
 test('Graph client picks official Instagram host and bearer header', async () => {

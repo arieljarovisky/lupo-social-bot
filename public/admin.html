@@ -134,13 +134,14 @@
         <div>
           <label for="privateNotice">Aviso público después del DM privado</label>
           <textarea id="privateNotice"></textarea>
+          <p class="hint">Una variante por línea. El bot las alterna para no repetir siempre el mismo aviso.</p>
         </div>
         <div>
           <label for="privateSuffix">Cierre del mensaje privado</label>
           <textarea id="privateSuffix"></textarea>
         </div>
       </div>
-      <p class="hint">En los DMs podés usar <code>{{store}}</code> para la tienda y <code>{{whatsapp}}</code> para el texto de WhatsApp.</p>
+      <p class="hint">En los DMs, <code>{{store}}</code> es el link de la tienda y <code>{{whatsapp}}</code> es el link de WhatsApp. Dejá un espacio antes de cada variable.</p>
     </section>
   </main>
 
@@ -188,7 +189,8 @@
       return {
         version: 1,
         extras: {
-          privateCommentNotice: $('privateNotice').value,
+          privateCommentNotice: $('privateNotice').value.split('\n').map((line) => line.trim()).filter(Boolean)[0] || '',
+          privateCommentNotices: $('privateNotice').value.split('\n').map((line) => line.trim()).filter(Boolean),
           privateReplySuffix: $('privateSuffix').value
         },
         intents: [...document.querySelectorAll('.card')].map((card) => ({
@@ -334,7 +336,10 @@
       const data = await api('/api/replies');
       state.catalog = data.catalog;
       state.meta = data.meta;
-      $('privateNotice').value = data.catalog.extras.privateCommentNotice;
+      const notices = data.catalog.extras.privateCommentNotices?.length
+        ? data.catalog.extras.privateCommentNotices
+        : [data.catalog.extras.privateCommentNotice];
+      $('privateNotice').value = notices.filter(Boolean).join('\n');
       $('privateSuffix').value = data.catalog.extras.privateReplySuffix;
       renderPills();
       renderIntents();

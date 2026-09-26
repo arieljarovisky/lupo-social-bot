@@ -8,6 +8,13 @@ const MAX_INTENTS = 20;
 const MAX_KEYWORDS = 30;
 const MAX_DM = 800;
 const MAX_COMMENT = 400;
+const DEFAULT_NOTICE = '¡Hola! 💙 Te enviamos la info por privado 📩';
+const DEFAULT_NOTICES = [
+  DEFAULT_NOTICE,
+  '¡Revisá tus mensajes! 💙',
+  'Te mandamos la info por DM ✨'
+];
+const DEFAULT_SUFFIX = '¿Te ayudo con algo más? Respondé este mensaje y seguimos 💙';
 
 const DEFAULTS = JSON.parse(readFileSync(DATA_PATH, 'utf8'));
 
@@ -28,9 +35,26 @@ function compileKeywords(keywords) {
 function applyVars(text, { storeUrl = 'https://lupo.ar', whatsappNumber = '' } = {}) {
   const store = String(storeUrl || 'https://lupo.ar').replace(/\/+$/, '');
   const whatsapp = /^\d{10,15}$/.test(whatsappNumber)
-    ? ` Podés contactarnos en https://wa.me/${whatsappNumber}.`
-    : ' Un asesor puede ayudarte por este mismo chat.';
-  return String(text ?? '').replaceAll('{{store}}', store).replaceAll('{{whatsapp}}', whatsapp);
+    ? `https://wa.me/${whatsappNumber}`
+    : 'este mismo chat';
+  return String(text ?? '')
+    .replace(/(\S)\{\{(store|whatsapp)\}\}/g, '$1 {{$2}}')
+    .replaceAll('{{store}}', store)
+    .replaceAll('{{whatsapp}}', whatsapp);
+}
+
+function cleanNotices(extrasIn) {
+  const listed = Array.isArray(extrasIn.privateCommentNotices)
+    ? extrasIn.privateCommentNotices.map((item) => cleanText(item, MAX_COMMENT)).filter(Boolean).slice(0, 8)
+    : [];
+  const primary = cleanText(extrasIn.privateCommentNotice, MAX_COMMENT);
+  let notices = listed.length ? listed : (primary ? [primary] : DEFAULT_NOTICES);
+  if (primary && !notices.includes(primary)) notices = [primary, ...notices].slice(0, 8);
+  return {
+    privateCommentNotice: notices[0] || DEFAULT_NOTICE,
+    privateCommentNotices: notices.length ? notices : [DEFAULT_NOTICE],
+    privateReplySuffix: cleanText(extrasIn.privateReplySuffix, 200) || DEFAULT_SUFFIX
+  };
 }
 
 function cleanText(value, max) {
@@ -78,12 +102,7 @@ export function validateCatalog(input) {
   if (!hasUnknown) throw new Error('Tiene que existir la intención "unknown" (respuesta cuando no hay coincidencia).');
   return {
     version: 1,
-    extras: {
-      privateCommentNotice: cleanText(extrasIn.privateCommentNotice, MAX_COMMENT)
-        || '¡Hola! 💙 Te enviamos información por privado.',
-      privateReplySuffix: cleanText(extrasIn.privateReplySuffix, 200)
-        || 'Si querés continuar, respondé este mensaje. 💙'
-    },
+    extras: cleanNotices(extrasIn),
     intents
   };
 }
@@ -164,8 +183,15 @@ export function privateReplyFor(message, opts = {}) {
   return suffix ? `${result.text}\n\n${suffix}` : result.text;
 }
 
-export function privateCommentNotice() {
-  return catalog.extras.privateCommentNotice;
+export function privateCommentNotice(seed = '') {
+  const notices = (catalog.extras.privateCommentNotices || []).filter(Boolean);
+  const list = notices.length ? notices : [catalog.extras.privateCommentNotice].filter(Boolean);
+  if (!list.length) return DEFAULT_NOTICE;
+  if (!seed || list.length === 1) return list[0];
+  let hash = 0;
+  const value = String(seed);
+  for (let i = 0; i < value.length; i++) hash = (hash * 33 + value.charCodeAt(i)) >>> 0;
+  return list[hash % list.length];
 }
 
 export function previewFor(message, opts = {}) {

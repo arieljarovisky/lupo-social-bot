@@ -93,7 +93,7 @@ export async function processEvent(event, config, send = graphPost) {
     }
     const path = event.platform === 'instagram' ? `${event.id}/replies` : `${event.id}/comments`;
     await send({ ...common, path, body: { message: privateSent
-      ? privateCommentNotice() : text } });
+      ? privateCommentNotice(event.id) : text } });
     action = `comment_${result.intent}${privateSent ? '_private' : ''}`;
   }
   // Mark only after successful API delivery (in DRY_RUN after successful simulation).

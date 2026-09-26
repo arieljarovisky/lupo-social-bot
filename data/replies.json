@@ -1,10 +1,30 @@
 {
   "version": 1,
   "extras": {
-    "privateCommentNotice": "¡Hola! 💙 Te enviamos información por privado.",
-    "privateReplySuffix": "Si querés continuar, respondé este mensaje. 💙"
+    "privateCommentNotice": "¡Hola! 💙 Te enviamos la info por privado 📩",
+    "privateCommentNotices": [
+      "¡Hola! 💙 Te enviamos la info por privado 📩",
+      "¡Revisá tus mensajes! 💙",
+      "Te mandamos la info por DM ✨"
+    ],
+    "privateReplySuffix": "¿Te ayudo con algo más? Respondé este mensaje y seguimos 💙"
   },
   "intents": [
+    {
+      "id": "promo_quiero",
+      "label": "Promo Comentá QUIERO",
+      "description": "Comentario de la promo: quien escribe QUIERO recibe el 10% OFF.",
+      "handoff": false,
+      "keywords": [
+        "^quiero$",
+        "^quiero!*$",
+        "^yo$",
+        "lo quiero",
+        "me anoto"
+      ],
+      "dm": "¡Hola! 💙 Acá tenés tu 10% OFF 🎁 Usá el código VOLVE10 en {{store}} ⏰ Válido por 48 horas.",
+      "comment": "¡Listo! 💙 Revisá tus mensajes 📩"
+    },
     {
       "id": "handoff",
       "label": "Asesor / humano",
@@ -15,29 +35,39 @@
         "persona real",
         "humano",
         "operador",
-        "atencion personalizada"
+        "atencion personalizada",
+        "hablar con alguien",
+        "\\bpersona\\b",
+        "atenci[oó]n al cliente"
       ],
-      "dm": "¡Hola! 💙 Dejamos esta conversación para atención personalizada. Nuestro equipo puede continuar por la bandeja de mensajes.{{whatsapp}}",
-      "comment": "¡Hola! 💙 Escribinos por mensaje privado para que nuestro equipo pueda revisar tu caso sin exponer tus datos."
+      "dm": "¡Hola! 💙 Te pasamos con una persona de nuestro equipo, en breve te responde por acá. Si preferís, también podés escribirnos por WhatsApp: {{whatsapp}}",
+      "comment": "¡Hola! 💙 Te escribimos por privado para ayudarte 📩"
     },
     {
       "id": "claim",
       "label": "Reclamo / pedido",
-      "description": "Problemas con un pedido, cambios o cancelaciones.",
+      "description": "Problemas con un pedido, seguimiento o cancelaciones.",
       "handoff": true,
       "keywords": [
         "reclamo",
         "equivocad",
         "devoluc",
-        "cambi[oa]",
         "fallad",
         "roto",
-        "no (me )?llego",
+        "no (me )?lleg",
         "no recib",
-        "cancelar"
+        "cancelar",
+        "d[oó]nde est[aá] mi (pedido|compra|paquete)",
+        "mi pedido",
+        "n[uú]mero de seguimiento",
+        "seguimiento",
+        "no lleg[oó]",
+        "lleg[oó] mal",
+        "me lleg[oó] otro",
+        "compr[eé] y"
       ],
-      "dm": "¡Hola! 💙 Queremos ayudarte con tu pedido. Por favor, no compartas datos personales públicamente.{{whatsapp}}",
-      "comment": "¡Hola! 💙 Escribinos por mensaje privado para que nuestro equipo pueda revisar tu caso sin exponer tus datos."
+      "dm": "¡Hola! 💙 Lamentamos el inconveniente, queremos resolverlo rápido. Escribinos por WhatsApp con tu número de pedido y te respondemos a la brevedad: {{whatsapp}}",
+      "comment": "¡Hola! 💙 Te escribimos por privado para resolverlo sin exponer tus datos 📩"
     },
     {
       "id": "wholesale",
@@ -49,10 +79,66 @@
         "por mayor",
         "revend",
         "distribuidor",
-        "lista de precios"
+        "lista de precios",
+        "al por mayor",
+        "precio mayorista",
+        "para (mi )?local",
+        "emprendimiento"
       ],
-      "dm": "¡Hola! 💙 Sí, trabajamos con ventas mayoristas. Contanos qué productos te interesan y te orientamos con las condiciones de compra.{{whatsapp}}",
-      "comment": "¡Hola! 💙 Sí, vendemos por mayor. Escribinos por privado y te contamos las condiciones."
+      "dm": "¡Hola! 💙 ¡Sí, vendemos por mayor! Escribinos por WhatsApp y te pasamos la lista de precios y condiciones: {{whatsapp}}",
+      "comment": "¡Hola! 💙 ¡Sí, vendemos por mayor! Te pasamos las condiciones por privado 📩"
+    },
+    {
+      "id": "exchange",
+      "label": "Cambios",
+      "description": "Cambio de talle o política de cambios.",
+      "handoff": false,
+      "keywords": [
+        "cambi(ar|o) (de |el )?talle",
+        "si no me queda",
+        "pol[ií]tica de cambio",
+        "puedo cambiar",
+        "hacen cambios"
+      ],
+      "dm": "¡Hola! 💙 ¡Sí, hacemos cambios! Si el talle no te queda, lo cambiás sin problema. Para gestionar un cambio escribinos por WhatsApp: {{whatsapp}}",
+      "comment": "¡Hola! 💙 ¡Sí, hacemos cambios! Te pasamos los detalles por privado 📩"
+    },
+    {
+      "id": "payment",
+      "label": "Medios de pago",
+      "description": "Tarjeta, transferencia, cuotas y otros medios de pago.",
+      "handoff": false,
+      "keywords": [
+        "cuotas",
+        "tarjeta",
+        "transferencia",
+        "mercado ?pago",
+        "efectivo",
+        "medios de pago",
+        "c[oó]mo (se )?paga"
+      ],
+      "dm": "¡Hola! 💙 Podés pagar con tarjeta o transferencia directamente en {{store}} 💳 Al finalizar la compra vas a ver todas las opciones y cuotas disponibles.",
+      "comment": "¡Hola! 💙 Te pasamos los medios de pago por privado 💳"
+    },
+    {
+      "id": "shipping",
+      "label": "Envío",
+      "description": "Despacho, entrega o retiro.",
+      "handoff": false,
+      "keywords": [
+        "env[ií]o",
+        "despach",
+        "entrega",
+        "retir",
+        "correo",
+        "flex",
+        "env[ií]an",
+        "llega a",
+        "mandan a",
+        "cu[aá]nto tarda"
+      ],
+      "dm": "¡Hola! 💙 Hacemos envíos a todo el país 📦 El costo y el plazo los ves en {{store}} al poner tu código postal.",
+      "comment": "¡Hola! 💙 ¡Sí, enviamos a todo el país! Te pasamos los detalles por privado 📦"
     },
     {
       "id": "size",
@@ -60,33 +146,19 @@
       "description": "Talles, equivalencias o medidas corporales.",
       "handoff": false,
       "keywords": [
-        "tall[ea]",
+        "\\btalles?\\b",
         "medid",
         "cadera",
         "cintura",
         "busto",
-        "equivalenc"
+        "equivalenc",
+        "qu[eé] talle",
+        "gu[ií]a de talles",
+        "(?<!hay (?:en )?)(xs|xl|xxl)\\b",
+        "talle (s|m|l)\\b"
       ],
-      "dm": "¡Hola! 💙 Para orientarte con el talle necesitamos el código o enlace del producto y tus medidas relevantes. La guía cambia según el modelo; no queremos recomendarte un talle incorrecto.",
-      "comment": "¡Hola! 💙 Escribinos por privado con el código del producto y te orientamos con la información correcta."
-    },
-    {
-      "id": "stock",
-      "label": "Stock / color",
-      "description": "Disponibilidad, colores o si hay un producto.",
-      "handoff": false,
-      "keywords": [
-        "stock",
-        "disponib",
-        "tenes",
-        "tienen",
-        "hay en",
-        "color",
-        "negro",
-        "blanco"
-      ],
-      "dm": "¡Hola! 💙 Pasanos el código del producto, talle y color que buscás. Podés ver los productos en {{store}}. Confirmaremos la disponibilidad antes de asegurarte que está en stock.",
-      "comment": "¡Hola! 💙 Escribinos por privado con el código del producto y te orientamos con la información correcta."
+      "dm": "¡Hola! 💙 Te ayudamos a elegir el talle ideal. Pasanos el producto (nombre o captura) y tus medidas de cintura/cadera o busto, y te recomendamos el correcto para que aciertes a la primera 😉",
+      "comment": "¡Hola! 💙 Te escribimos por privado para ayudarte con el talle 📩"
     },
     {
       "id": "price",
@@ -94,46 +166,75 @@
       "description": "Cuánto sale, valor o un importe.",
       "handoff": false,
       "keywords": [
-        "preci[oa]",
-        "cuanto (sale|cuesta|esta)",
+        "prec(io|ios)",
+        "cu[aá]nto (sale|cuesta|est[aá])",
         "valor",
-        "\\$[0-9]"
+        "\\$[0-9]",
+        "^precio\\??$",
+        "^info$",
+        "info\\?",
+        "💰",
+        "qu[eé] precio"
       ],
-      "dm": "¡Hola! 💙 Pasanos el código o enlace del artículo para identificar la variante correcta. Podés consultar los precios publicados en {{store}}; así evitamos pasarte un importe desactualizado.",
-      "comment": "¡Hola! 💙 Escribinos por privado con el código del producto y te orientamos con la información correcta."
+      "dm": "¡Hola! 💙 Pasanos el nombre del producto o una captura y te confirmamos el precio al toque. También podés ver todos los precios en {{store}} 🛍️",
+      "comment": "¡Hola! 💙 Te mandamos el precio por privado 📩"
     },
     {
-      "id": "shipping",
-      "label": "Envío",
-      "description": "Despacho, entrega, retiro o seguimiento.",
+      "id": "promo",
+      "label": "Promos / descuentos",
+      "description": "Descuentos, cupones, ofertas y códigos.",
       "handoff": false,
       "keywords": [
-        "envio",
-        "despach",
-        "entrega",
-        "retir",
-        "seguimiento",
-        "correo",
-        "flex"
+        "descuento",
+        "promo",
+        "oferta",
+        "cup[oó]n",
+        "c[oó]digo",
+        "sale",
+        "hot ?sale",
+        "cyber",
+        "rebaja"
       ],
-      "dm": "¡Hola! 💙 Hacemos envíos. El costo y plazo dependen del destino y del pedido. Podés consultar las opciones durante la compra en {{store}}. Para un pedido existente, escribinos por privado y lo revisa el equipo.",
-      "comment": "¡Hola! 💙 El costo y plazo dependen del destino. Escribinos por privado y te orientamos."
+      "dm": "¡Hola! 💙 Tenemos un 10% OFF para vos 🎁 Usá el código VOLVE10 en {{store}}.",
+      "comment": "¡Hola! 💙 Te mandamos un descuento por privado 🎁"
+    },
+    {
+      "id": "stock",
+      "label": "Stock / color",
+      "description": "Disponibilidad de un producto, talle o color.",
+      "handoff": false,
+      "keywords": [
+        "stock",
+        "disponib",
+        "color",
+        "ten[eé]s (en )?(stock|talle|color)",
+        "tienen (en )?(stock|talle|color)",
+        "hay (en )?(stock|talle|xs|s|m|l|xl|xxl)\\b",
+        "\\bquedan?\\b",
+        "en (negro|blanco|otro color)"
+      ],
+      "dm": "¡Hola! 💙 Decinos qué producto, talle y color buscás y te confirmamos si hay stock. Podés ver todo lo disponible en {{store}}",
+      "comment": "¡Hola! 💙 Te escribimos por privado para confirmarte talle y color 📩"
     },
     {
       "id": "shop",
       "label": "Compra / tienda",
-      "description": "Catálogo, web, link o dónde comprar.",
+      "description": "Catálogo, web, link o cómo comprar.",
       "handoff": false,
       "keywords": [
-        "compr",
         "catalog",
         "tienda",
         "web",
         "link",
-        "donde"
+        "c[oó]mo compr",
+        "quiero compr",
+        "d[oó]nde compr",
+        "p[aá]gina",
+        "me interesa",
+        "lo quiero"
       ],
-      "dm": "¡Hola! 💙 Podés ver nuestros productos y comprar en {{store}}. Si buscás un artículo puntual, pasanos el código y te ayudamos a encontrarlo.",
-      "comment": "¡Hola! 💙 Podés ver nuestros productos en {{store}}. ¡Gracias por escribirnos!"
+      "dm": "¡Hola! 💙 Podés comprar directo en {{store}} 🛒 Si buscás algo puntual, pasanos el nombre o una captura y te ayudamos a encontrarlo.",
+      "comment": "¡Hola! 💙 Te pasamos el link por privado 🛒"
     },
     {
       "id": "unknown",
@@ -141,7 +242,7 @@
       "description": "Mensajes que no matchean ninguna palabra clave. Si el comentario queda vacío, el bot no responde en público.",
       "handoff": false,
       "keywords": [],
-      "dm": "¡Hola! 💙 Gracias por escribir a Lupo Argentina. Contanos qué producto te interesa o si consultás por talles, precios, envíos o compras mayoristas.{{whatsapp}}",
+      "dm": "¡Hola! 💙 Gracias por escribir a Lupo Argentina. Contanos qué estás buscando (producto, talle, envío o compra mayorista) y te ayudamos. También podés escribirnos por WhatsApp: {{whatsapp}}",
       "comment": ""
     }
   ]
