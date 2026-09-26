@@ -13,7 +13,9 @@ const config = {
   igUsername: env.IG_USERNAME || '', fbPageId: env.FB_PAGE_ID || '',
   fbPageAccessToken: env.FB_PAGE_ACCESS_TOKEN || '',
   igPrivateReplies: env.IG_PRIVATE_REPLIES === 'true', dryRun: env.DRY_RUN !== 'false',
-  storeUrl: env.STORE_URL || 'https://lupo.ar', whatsappNumber: env.WHATSAPP_NUMBER || ''
+  storeUrl: env.STORE_URL || 'https://lupo.ar', whatsappNumber: env.WHATSAPP_NUMBER || '',
+  // Hours without another auto-DM to the same person. 0 = off. Default 24.
+  dmCooldownHours: env.DM_COOLDOWN_HOURS ?? '24'
 };
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const app = express();
