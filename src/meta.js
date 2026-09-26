@@ -86,7 +86,7 @@ export function extractEvents(payload) {
         }
         events.push({ platform: 'instagram', kind: 'comment', accountId,
           senderId: String(value.from?.id ?? ''), username: value.from?.username ?? '',
-          id: String(commentId), text, timestamp: Date.now() });
+          id: String(commentId), text, timestamp: Date.now(), mediaId });
       }
     }
     if (payload.object === 'page') {

@@ -4,6 +4,7 @@ import { createHmac } from 'node:crypto';
 import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, resetCatalog, previewFor, privateCommentNotice } from '../src/replies.js';
 import { verifySignature, extractEvents, graphPost, escapeUnicodeForMeta } from '../src/meta.js';
 import { processEvent, resetTestState } from '../src/bot.js';
+import { getMappings, addMapping, updateMapping, deleteMapping, getProductForMedia, resetMappings, validateStore } from '../src/media-products.js';
 
 const cfg = { igUserId: 'ig123', fbPageId: 'page123', igAccessToken: 'IG_TEST',
   fbPageAccessToken: 'FB_TEST', igPrivateReplies: false, dryRun: true,
@@ -229,4 +230,104 @@ test('Graph client picks official Instagram host and bearer header', async () =>
   });
   assert.equal(req[0], 'https://graph.instagram.com/v26.0/ig123/messages');
   assert.equal(req[1].headers.Authorization, 'Bearer abc');
+});
+
+test('media-products CRUD operations', () => {
+  resetMappings({ persist: false });
+  assert.deepEqual(getMappings(), []);
+
+  const mapping = addMapping({
+    mediaId: '17900000000000001',
+    productUrl: 'https://lupo.ar/productos/boxer',
+    productName: 'Boxer Clásico'
+  }, { persist: false });
+  assert.equal(mapping.mediaId, '17900000000000001');
+  assert.equal(mapping.enabled, true);
+  assert.equal(getMappings().length, 1);
+
+  const product = getProductForMedia('17900000000000001');
+  assert.equal(product.productUrl, 'https://lupo.ar/productos/boxer');
+  assert.equal(product.productName, 'Boxer Clásico');
+
+  assert.equal(getProductForMedia('nonexistent'), null);
+
+  updateMapping('17900000000000001', { enabled: false }, { persist: false });
+  assert.equal(getProductForMedia('17900000000000001'), null);
+
+  updateMapping('17900000000000001', { enabled: true, productName: 'Boxer Premium' }, { persist: false });
+  assert.equal(getProductForMedia('17900000000000001').productName, 'Boxer Premium');
+
+  deleteMapping('17900000000000001', { persist: false });
+  assert.deepEqual(getMappings(), []);
+
+  resetMappings({ persist: false });
+});
+
+test('media-products validation rejects invalid data', () => {
+  resetMappings({ persist: false });
+  assert.throws(() => validateStore({ mappings: [{ mediaId: 'invalid' }] }), /no es válido/);
+  assert.throws(() => validateStore({ mappings: [{ mediaId: '17900000000000001', productUrl: 'not-a-url', productName: 'Test' }] }), /URL/);
+  assert.throws(() => validateStore({ mappings: [{ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: '' }] }), /nombre/);
+  addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Test' }, { persist: false });
+  assert.throws(() => addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Duplicate' }, { persist: false }), /Ya existe/);
+  resetMappings({ persist: false });
+});
+
+test('extractEvents includes mediaId for Instagram comments', () => {
+  const events = extractEvents({ object: 'instagram', entry: [{
+    id: 'ig123', field: 'comments',
+    value: { id: 'c1', text: 'Precio', from: { id: 'user1' }, media: { id: '17900000000000001' }, parent_id: '17900000000000001' }
+  }] });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].mediaId, '17900000000000001');
+});
+
+test('IG comment with mapped product includes product link in private reply', async () => {
+  resetTestState();
+  resetMappings({ persist: false });
+  addMapping({
+    mediaId: '17900000000000002',
+    productUrl: 'https://lupo.ar/productos/slip',
+    productName: 'Slip Básico'
+  }, { persist: false });
+
+  const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const event = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'comment1', senderId: 'user1', text: 'Precio',
+    mediaId: '17900000000000002'
+  };
+  const result = await processEvent(event, { ...cfg, igPrivateReplies: true }, send);
+  assert.equal(result.action, 'comment_price_private');
+  assert.equal(sent.length, 2);
+  assert.match(sent[0].body.message.text, /Slip Básico/);
+  assert.match(sent[0].body.message.text, /https:\/\/lupo\.ar\/productos\/slip/);
+
+  resetMappings({ persist: false });
+});
+
+test('IG comment with mapped product sends product link even without keyword match', async () => {
+  resetTestState();
+  resetMappings({ persist: false });
+  addMapping({
+    mediaId: '17900000000000003',
+    productUrl: 'https://lupo.ar/productos/medias',
+    productName: 'Medias Deportivas'
+  }, { persist: false });
+
+  const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const event = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'comment2', senderId: 'user1', text: 'Hermosa foto',
+    mediaId: '17900000000000003'
+  };
+  const result = await processEvent(event, { ...cfg, igPrivateReplies: true }, send);
+  assert.equal(result.action, 'comment_unknown_private');
+  assert.equal(sent.length, 2);
+  assert.match(sent[0].body.message.text, /Medias Deportivas/);
+  assert.match(sent[0].body.message.text, /https:\/\/lupo\.ar\/productos\/medias/);
+
+  resetMappings({ persist: false });
 });
