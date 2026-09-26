@@ -225,7 +225,7 @@
           privateCommentNotices: $('privateNotice').value.split('\n').map((line) => line.trim()).filter(Boolean),
           privateReplySuffix: $('privateSuffix').value
         },
-        intents: [...document.querySelectorAll('.card')].map((card) => ({
+        intents: [...document.querySelectorAll('#intents .card')].map((card) => ({
           id: card.dataset.id,
           label: card.querySelector('.label').value,
           description: card.querySelector('.description').value,
@@ -305,7 +305,7 @@
         </article>
       `).join('');
 
-      document.querySelectorAll('.card').forEach((card, index, cards) => {
+      document.querySelectorAll('#intents .card').forEach((card, index, cards) => {
         keywordList(card);
         card.querySelector('.add-key').onclick = () => {
           const input = card.querySelector('.new-key');
