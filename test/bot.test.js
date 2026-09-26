@@ -132,6 +132,17 @@ test('IG private reply sends once, followed by public reply only if enabled', as
   assert.equal((await processEvent(event, { ...cfg, igPrivateReplies: true }, send)).action, 'duplicate');
 });
 
+test('un DM posterior al mensaje privado no recibe otra respuesta automática', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const comment = { platform: 'instagram', kind: 'comment', accountId: 'ig123', id: 'i30', senderId: 'c8', text: 'Precio' };
+  assert.equal((await processEvent(comment, { ...cfg, igPrivateReplies: true }, send)).action, 'comment_price_private');
+  const reply = { platform: 'instagram', kind: 'message', accountId: 'ig123', id: 'm30', senderId: 'c8', text: 'dale, gracias' };
+  assert.equal((await processEvent(reply, cfg, send)).action, 'dm_cooldown');
+  assert.equal(sent.length, 2);
+  assert.equal((await processEvent({ ...reply, id: 'm31', senderId: 'otro', text: 'hola' }, cfg, send)).action, 'dm_unknown');
+});
+
 test('Graph client dry run does not make network calls', async () => {
   const result = await graphPost({ platform: 'facebook', accountId: '123', dryRun: true,
     body: { message: { text: 'hola' } }, fetchFn: () => { throw Error('network called'); } });

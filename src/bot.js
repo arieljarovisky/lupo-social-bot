@@ -127,6 +127,8 @@ export async function processEvent(event, config, send = graphPost) {
           privateAttempts.set(key, Date.now() + 8 * 24 * 3600 * 1000);
           await send({ ...common, body: { recipient: { comment_id: event.id }, message: { text: privateText } } });
           privateSent = true;
+          // That private message opens the chat. A later reply from the same person is not a new conversation.
+          if (event.senderId && coolMs > 0) dmCooldown.set(customerKey, Date.now() + coolMs);
         } catch (err) {
           // Never retry blindly: IG permits one private reply per comment.
           console.error(`[IG PRIVATE REPLY] ${event.id}:`, err.message);
