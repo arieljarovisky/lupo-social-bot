@@ -154,7 +154,7 @@
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <div>
           <h2>Posts con productos</h2>
-          <p class="hint">Asociá un post de Instagram a un producto y escribí la respuesta de ese post. Si alguien comenta ahí, el DM privado usa ese texto y no la respuesta automática. Hace falta <code>IG_PRIVATE_REPLIES=true</code>.</p>
+          <p class="hint">Asociá un post de Instagram a un producto. El comentario público de esa publicación usa el texto de abajo, no la respuesta general. El DM privado lleva el detalle. Hace falta <code>IG_PRIVATE_REPLIES=true</code> para el mensaje privado.</p>
         </div>
       </div>
       <div class="card" style="margin-bottom:16px">
@@ -185,9 +185,14 @@
           <input id="newProductUrl" placeholder="https://lupo.ar/productos/boxer-clasico">
         </div>
         <div style="margin-bottom:12px">
-          <label for="newReply">Respuesta de este post</label>
+          <label for="newComment">Respuesta del comentario en esta publicación</label>
+          <textarea id="newComment" placeholder="¡Listo! 💙 En este post está el {{nombre}}. Revisá tus mensajes 📩"></textarea>
+          <p class="hint">Este texto se publica debajo del comentario, solo en este post.</p>
+        </div>
+        <div style="margin-bottom:12px">
+          <label for="newReply">Mensaje privado de esta publicación</label>
           <textarea id="newReply" placeholder="¡Hola! 💙 En este post está el {{nombre}}. Lo ves acá: {{url}}"></textarea>
-          <p class="hint">Variables: <code>{{nombre}}</code>, <code>{{url}}</code>, <code>{{store}}</code> y <code>{{whatsapp}}</code>. Dejá un espacio antes de cada una.</p>
+          <p class="hint">Variables en los dos textos: <code>{{nombre}}</code>, <code>{{url}}</code>, <code>{{store}}</code> y <code>{{whatsapp}}</code>. Dejá un espacio antes de cada una.</p>
         </div>
         <label class="check" style="margin-bottom:12px">
           <input id="newEnabled" type="checkbox" checked> Habilitado
@@ -414,7 +419,11 @@
             </div>
           </div>
           <div style="margin-bottom:12px">
-            <label>Respuesta de este post</label>
+            <label>Respuesta del comentario en esta publicación</label>
+            <textarea class="comment">${escapeText(m.comment || '')}</textarea>
+          </div>
+          <div style="margin-bottom:12px">
+            <label>Mensaje privado de esta publicación</label>
             <textarea class="reply">${escapeText(m.reply || '')}</textarea>
           </div>
           <div class="row" style="justify-content:space-between">
@@ -444,16 +453,17 @@
           const productUrl = card.querySelector('.productUrl').value.trim();
           const productName = card.querySelector('.productName').value.trim();
           const reply = card.querySelector('.reply').value.trim();
+          const comment = card.querySelector('.comment').value.trim();
           const enabled = card.querySelector('.mappingEnabled').checked;
-          if (!reply) {
-            $('mappingsStatus').textContent = 'Escribí la respuesta de este post.';
+          if (!reply || !comment) {
+            $('mappingsStatus').textContent = 'Escribí la respuesta del comentario y el mensaje privado de esta publicación.';
             $('mappingsStatus').className = 'hint err';
             return;
           }
           try {
             const result = await api(`/api/media-products/${encodeURIComponent(mediaId)}`, {
               method: 'PUT',
-              body: JSON.stringify({ productUrl, productName, reply, enabled })
+              body: JSON.stringify({ productUrl, productName, reply, comment, enabled })
             });
             const index = state.mappings.findIndex((m) => m.mediaId === mediaId);
             if (index !== -1) state.mappings[index] = result.mapping;
@@ -698,16 +708,17 @@
       const productName = $('newProductName').value.trim();
       const productUrl = $('newProductUrl').value.trim();
       const reply = $('newReply').value.trim();
+      const comment = $('newComment').value.trim();
       const enabled = $('newEnabled').checked;
-      if (!mediaId || !productName || !productUrl || !reply) {
-        $('mappingsStatus').textContent = 'Completá todos los campos, incluida la respuesta del post.';
+      if (!mediaId || !productName || !productUrl || !reply || !comment) {
+        $('mappingsStatus').textContent = 'Completá todos los campos, incluida la respuesta del comentario.';
         $('mappingsStatus').className = 'hint err';
         return;
       }
       try {
         const result = await api('/api/media-products', {
           method: 'POST',
-          body: JSON.stringify({ mediaId, productName, productUrl, reply, enabled })
+          body: JSON.stringify({ mediaId, productName, productUrl, reply, comment, enabled })
         });
         state.mappings.push(result.mapping);
         renderMappings();
@@ -715,6 +726,7 @@
         $('newProductName').value = '';
         $('newProductUrl').value = '';
         $('newReply').value = '';
+        $('newComment').value = '';
         $('newEnabled').checked = true;
         $('mappingsStatus').textContent = 'Mapeo agregado.';
         $('mappingsStatus').className = 'hint';

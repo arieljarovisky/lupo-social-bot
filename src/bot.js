@@ -58,12 +58,12 @@ function echoFromBot(event, keys, now = Date.now()) {
   return keys.some((key) => (botOutboundUntil.get(key) ?? 0) > now);
 }
 
-function renderMappingReply(product, opts) {
+function renderMappingReply(template, product, opts) {
   const store = String(opts.storeUrl || 'https://lupo.ar').replace(/\/+$/, '');
   const whatsapp = /^\d{10,15}$/.test(String(opts.whatsappNumber || ''))
     ? `https://wa.me/${opts.whatsappNumber}`
     : 'este mismo chat';
-  return String(product.reply)
+  return String(template ?? '')
     .replace(/(\S)\{\{(store|whatsapp|nombre|url)\}\}/g, '$1 {{$2}}')
     .replaceAll('{{store}}', store)
     .replaceAll('{{whatsapp}}', whatsapp)
@@ -162,15 +162,16 @@ export async function processEvent(event, config, send = graphPost) {
       console.log(`[HUMAN REVIEW] ${event.platform} account=${expected} sender=${event.senderId} (revisar bandeja de Meta)`);
     }
   } else {
-    const text = publicCommentFor(event.text, opts);
     const product = event.mediaId ? getProductForMedia(event.mediaId) : null;
+    const customPublic = product?.comment ? renderMappingReply(product.comment, product, opts) : '';
+    const text = customPublic || publicCommentFor(event.text, opts);
     if (!text && !product) return { action: 'comment_without_keyword' };
     // Optional IG private reply before public reply. Exactly one attempt per comment.
     let privateSent = false;
     if (event.platform === 'instagram' && config.igPrivateReplies && !privateAttempts.has(key)) {
       let privateText = privateReplyFor(event.text, opts);
       if (product?.reply) {
-        privateText = renderMappingReply(product, opts);
+        privateText = renderMappingReply(product.reply, product, opts);
       } else if (product && privateText) {
         privateText = `${privateText}\n\n🛒 ${product.productName}: ${product.productUrl}`;
       } else if (product && !privateText) {
@@ -192,7 +193,7 @@ export async function processEvent(event, config, send = graphPost) {
       }
     }
     const path = event.platform === 'instagram' ? `${event.id}/replies` : `${event.id}/comments`;
-    const publicMessage = privateSent ? privateCommentNotice(event.id) : text;
+    const publicMessage = customPublic || (privateSent ? privateCommentNotice(event.id) : text);
     if (publicMessage) {
       await send({ ...common, path, body: { message: publicMessage } });
     }

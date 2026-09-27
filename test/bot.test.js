@@ -449,3 +449,36 @@ test('IG comment on a mapped post uses that post reply instead of the automatic 
 
   resetMappings({ persist: false });
 });
+
+test('un comentario en un post asociado usa la respuesta pública de esa publicación', async () => {
+  resetTestState();
+  resetMappings({ persist: false });
+  addMapping({
+    mediaId: '17900000000000005',
+    productUrl: 'https://lupo.ar/productos/boxer',
+    productName: 'Boxer Clásico',
+    reply: 'Privado del {{nombre}}: {{url}}',
+    comment: 'Este post es el {{nombre}}. Mirá el DM 📩'
+  }, { persist: false });
+
+  const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const event = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'comment4', senderId: 'user1', text: 'precio?',
+    mediaId: '17900000000000005'
+  };
+  const result = await processEvent(event, { ...cfg, igPrivateReplies: true }, send);
+  assert.equal(result.action, 'comment_price_private');
+  assert.equal(sent[1].body.message, 'Este post es el Boxer Clásico. Mirá el DM 📩');
+  assert.doesNotMatch(sent[1].body.message, /cuánto|tienda/i);
+  const other = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'comment5', senderId: 'user2', text: 'precio?',
+    mediaId: '17900000000000999'
+  };
+  await processEvent(other, { ...cfg, igPrivateReplies: true }, send);
+  assert.equal(sent.at(-1).body.message, privateCommentNotice('comment5'));
+
+  resetMappings({ persist: false });
+});
