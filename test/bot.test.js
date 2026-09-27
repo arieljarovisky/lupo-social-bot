@@ -1,10 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { dataFile } from '../src/data-dir.js';
 import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, resetCatalog, previewFor, privateCommentNotice } from '../src/replies.js';
 import { verifySignature, extractEvents, graphPost, escapeUnicodeForMeta } from '../src/meta.js';
 import { processEvent, resetTestState } from '../src/bot.js';
 import { getMappings, addMapping, updateMapping, deleteMapping, getProductForMedia, resetMappings, validateStore } from '../src/media-products.js';
+
+test('DATA_DIR no pisa un archivo ya editado en el volumen', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lupo-data-'));
+  const previous = process.env.DATA_DIR;
+  process.env.DATA_DIR = dir;
+  try {
+    const path = dataFile('replies.json');
+    assert.match(readFileSync(path, 'utf8'), /"intents"/);
+    writeFileSync(path, '{"version":1,"custom":true}\n');
+    assert.equal(readFileSync(dataFile('replies.json'), 'utf8'), '{"version":1,"custom":true}\n');
+  } finally {
+    if (previous == null) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = previous;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 const cfg = { igUserId: 'ig123', fbPageId: 'page123', igAccessToken: 'IG_TEST',
   fbPageAccessToken: 'FB_TEST', igPrivateReplies: false, dryRun: true,

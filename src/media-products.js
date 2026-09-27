@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
+import { dataFile } from './data-dir.js';
 
-const DATA_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'media-products.json');
+const DATA_PATH = dataFile('media-products.json');
 const MEDIA_ID_RE = /^\d{10,25}$/;
 const URL_RE = /^https?:\/\/.+/;
 const MAX_MAPPINGS = 500;

@@ -1,8 +1,10 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dataFile } from './data-dir.js';
 
-const DATA_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'replies.json');
+const BUNDLED_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'replies.json');
+const DATA_PATH = dataFile('replies.json');
 const ID_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const MAX_INTENTS = 20;
 const MAX_KEYWORDS = 30;
@@ -16,7 +18,7 @@ const DEFAULT_NOTICES = [
 ];
 const DEFAULT_SUFFIX = '¿Te ayudo con algo más? Respondé este mensaje y seguimos 💙';
 
-const DEFAULTS = JSON.parse(readFileSync(DATA_PATH, 'utf8'));
+const DEFAULTS = JSON.parse(readFileSync(BUNDLED_PATH, 'utf8'));
 
 let catalog = loadFromDisk();
 

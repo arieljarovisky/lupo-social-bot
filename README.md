@@ -50,7 +50,7 @@ Editar `.env`. Para el simulador, crear un `SIMULATOR_TOKEN` aleatorio distinto 
 npm run dev
 ```
 
-Visitar `http://127.0.0.1:3000/health` para comprobar el estado, o `http://127.0.0.1:3000/admin` para editar las respuestas. En localhost el panel abre sin token; en Railway u otro host público definí `ADMIN_TOKEN`. En un redeploy sin volumen persistente, los cambios de `data/replies.json` se pueden perder.
+Visitar `http://127.0.0.1:3000/health` para comprobar el estado, o `http://127.0.0.1:3000/admin` para editar las respuestas. En localhost el panel abre sin token; en Railway u otro host público definí `ADMIN_TOKEN`. En Railway hace falta un volumen montado en `/data` y la variable `DATA_DIR=/data`; si no, cada deploy borra las respuestas y los posts guardados desde el panel.
 
 ### Probar respuestas sin conectar Meta
 
@@ -69,10 +69,11 @@ Esta variante funciona con Railway: `npm start` **no depende de tener un archivo
 
 1. Subí **solo la carpeta `lupo-social-bot`** a un repositorio privado de GitHub. `.gitignore` excluye `.env`, pero verificá con `git status` antes de publicar. No subas un `.env` con secretos.
 2. Railway > New Project > Deploy from GitHub Repo > elegí el repo; el directorio raíz es el que contiene `package.json`. No hace falta instalar una base de datos para probar el handshake.
-3. Service > Variables: `META_VERIFY_TOKEN`, `META_APP_SECRET`, `DRY_RUN=true` y, cuando puedas generarlos, `IG_USER_ID`, `IG_ACCESS_TOKEN`, `FB_PAGE_ID`, `FB_PAGE_ACCESS_TOKEN`. `META_VERIFY_TOKEN` debe ser aleatorio y coincidir con el campo de Meta; `META_APP_SECRET` es el secreto real de la app (no lo compartas). No cargues `PORT` salvo necesidad especial.
-4. Settings > Networking > Generate Domain. Comprobá `https://DOMINIO.up.railway.app/health`; esperá `{"ok":true,"simulation":true}`.
-5. En Meta > Instagram API > Webhooks: Callback URL = `https://DOMINIO.up.railway.app/webhook` y Verify Token = valor de `META_VERIFY_TOKEN`; pulsá Verificar y guardar. La app puede requerir estar publicada y permisos aprobados para eventos reales; tener la URL verificada no los concede.
-6. Mantené `DRY_RUN=true` hasta probar roles/permisos/eventos y endurecer la persistencia. En el MVP el procesamiento ocurre tras devolver HTTP 200 y los datos de deduplicación viven en memoria; un reinicio puede perder eventos o generar duplicados. **No es adecuado para atención comercial desatendida en producción** sin cola y almacenamiento durable.
+3. Service > Variables: `META_VERIFY_TOKEN`, `META_APP_SECRET`, `DRY_RUN=true`, `DATA_DIR=/data` y, cuando puedas generarlos, `IG_USER_ID`, `IG_ACCESS_TOKEN`, `FB_PAGE_ID`, `FB_PAGE_ACCESS_TOKEN`. `META_VERIFY_TOKEN` debe ser aleatorio y coincidir con el campo de Meta; `META_APP_SECRET` es el secreto real de la app (no lo compartas). No cargues `PORT` salvo necesidad especial.
+4. Service > Volumes > Add volume, mount path `/data`. Ahí quedan `replies.json` y `media-products.json`. El primer arranque copia los archivos del repo solo si el volumen está vacío; los cambios del panel no se pisan en el deploy siguiente.
+5. Settings > Networking > Generate Domain. Comprobá `https://DOMINIO.up.railway.app/health`; esperá `{"ok":true,"simulation":true}`.
+6. En Meta > Instagram API > Webhooks: Callback URL = `https://DOMINIO.up.railway.app/webhook` y Verify Token = valor de `META_VERIFY_TOKEN`; pulsá Verificar y guardar. La app puede requerir estar publicada y permisos aprobados para eventos reales; tener la URL verificada no los concede.
+7. Mantené `DRY_RUN=true` hasta probar roles/permisos/eventos y endurecer la persistencia. En el MVP el procesamiento ocurre tras devolver HTTP 200 y los datos de deduplicación viven en memoria; un reinicio puede perder eventos o generar duplicados. **No es adecuado para atención comercial desatendida en producción** sin cola y almacenamiento durable. Las respuestas del panel sí persisten si el volumen `/data` está montado.
 
 Para desarrollo local: copiar `.env.example` a `.env` y usar `npm run dev`. En Railway: `npm start`.
 
