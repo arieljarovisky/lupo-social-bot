@@ -112,11 +112,25 @@ test('compartir una historia abre el chat y no saluda cuando responden', async (
   ] }] });
   assert.equal(events[0].kind, 'echo');
   assert.equal(events[0].senderId, 'c9');
-  assert.equal((await processEvent(events[0], cfg, send)).action, 'outbound_seen');
-  assert.equal((await processEvent(events[1], cfg, send)).action, 'dm_cooldown');
+  assert.equal((await processEvent(events[0], cfg, send)).action, 'human_outbound');
+  assert.equal((await processEvent(events[1], cfg, send)).action, 'human_paused');
   assert.equal(sent.length, 0);
-  assert.equal((await processEvent({ platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c9', id: 'in2', text: 'precio?' }, cfg, send)).action, 'dm_price');
-  assert.equal(sent.length, 1);
+  assert.equal((await processEvent({ platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c9', id: 'in2', text: 'precio?' }, cfg, send)).action, 'human_paused');
+  assert.equal(sent.length, 0);
+});
+
+test('el eco de una respuesta del bot no le saca el chat al cliente', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { message_id: 'bot-mid-1' }; };
+  const base = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c9' };
+  assert.equal((await processEvent({ ...base, id: 'in0', text: 'hola' }, cfg, send)).action, 'dm_unknown');
+  const now = Date.now();
+  const echo = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', messaging: [
+    { sender: { id: 'ig123' }, recipient: { id: 'c9' }, timestamp: now, message: { mid: 'bot-mid-1', is_echo: true, text: 'Hola' } }
+  ] }] });
+  assert.equal((await processEvent(echo[0], cfg, send)).action, 'outbound_seen');
+  assert.equal((await processEvent({ ...base, id: 'in2', text: 'precio?' }, cfg, send)).action, 'dm_price');
+  assert.equal(sent.length, 2);
 });
 
 test('responder una historia no dispara el saludo automático', async () => {

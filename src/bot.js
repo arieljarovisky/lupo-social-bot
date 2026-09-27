@@ -7,15 +7,20 @@ const inFlight = new Set();
 const privateAttempts = new Map();
 const paused = new Map();
 const dmCooldown = new Map();
+const botMids = new Map();
+const botOutboundUntil = new Map();
 const DEDUP_MS = 48 * 3600 * 1000;
 const HANDOFF_PAUSE_MS = 24 * 3600 * 1000;
 const DEFAULT_DM_COOLDOWN_MS = 24 * 3600 * 1000;
+const BOT_ECHO_WINDOW_MS = 2 * 60 * 1000;
 
 function cleanExpired(now = Date.now()) {
   for (const [key, until] of recent) if (until <= now) recent.delete(key);
   for (const [key, until] of paused) if (until <= now) paused.delete(key);
   for (const [key, until] of privateAttempts) if (until <= now) privateAttempts.delete(key);
   for (const [key, until] of dmCooldown) if (until <= now) dmCooldown.delete(key);
+  for (const [key, until] of botMids) if (until <= now) botMids.delete(key);
+  for (const [key, until] of botOutboundUntil) if (until <= now) botOutboundUntil.delete(key);
 }
 
 /** Hours from config; 0 disables. Default 24h when unset. */
@@ -30,6 +35,27 @@ function dmCooldownMs(config) {
 
 function idList(value) {
   return String(value ?? '').split(/[,\s]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function threadKeys(platform, accountIds, senderId) {
+  const ids = [...new Set(accountIds.map((id) => String(id ?? '').trim()).filter(Boolean))];
+  return ids.map((id) => `${platform}:${id}:${senderId}`);
+}
+
+function markBotOutbound(platform, accountIds, senderId) {
+  if (!senderId) return;
+  const until = Date.now() + BOT_ECHO_WINDOW_MS;
+  for (const key of threadKeys(platform, accountIds, senderId)) botOutboundUntil.set(key, until);
+}
+
+function noteBotMid(response) {
+  const mid = response?.message_id || response?.message?.mid;
+  if (mid) botMids.set(String(mid), Date.now() + DEDUP_MS);
+}
+
+function echoFromBot(event, keys, now = Date.now()) {
+  if (event.id && botMids.has(event.id)) return true;
+  return keys.some((key) => (botOutboundUntil.get(key) ?? 0) > now);
 }
 
 function renderMappingReply(product, opts) {
@@ -75,9 +101,16 @@ export async function processEvent(event, config, send = graphPost) {
   const accountId = incoming && incoming !== '0' ? incoming : expected;
   if (event.kind === 'echo') {
     if (!event.senderId || expectedIds.includes(String(event.senderId))) return { action: 'ignored' };
-    const coolMs = dmCooldownMs(config);
-    if (coolMs > 0) dmCooldown.set(`${event.platform}:${accountId}:${event.senderId}`, Date.now() + coolMs);
-    return { action: 'outbound_seen' };
+    const keys = threadKeys(event.platform, [accountId, ...expectedIds], event.senderId);
+    if (echoFromBot(event, keys)) {
+      const coolMs = dmCooldownMs(config);
+      if (coolMs > 0) for (const key of keys) dmCooldown.set(key, Date.now() + coolMs);
+      return { action: 'outbound_seen' };
+    }
+    // Sent from the Instagram app (a story share or a manual DM). This chat stays with the human.
+    const until = Date.now() + HANDOFF_PAUSE_MS;
+    for (const key of keys) paused.set(key, until);
+    return { action: 'human_outbound' };
   }
   if (!['comment', 'message'].includes(event.kind) || !event.id || !event.text || isSelf(event, config)) {
     return { action: 'ignored' };
@@ -115,11 +148,12 @@ export async function processEvent(event, config, send = graphPost) {
     }
     const alreadyChatting = coolMs > 0 && dmCooldown.has(customerKey);
     const text = alreadyChatting ? withoutOpeningGreeting(result.text) : result.text;
-    await send({ ...common, body: {
+    markBotOutbound(event.platform, [accountId, ...expectedIds], event.senderId);
+    noteBotMid(await send({ ...common, body: {
       recipient: { id: event.senderId },
       messaging_type: event.platform === 'facebook' ? 'RESPONSE' : undefined,
       message: { text }
-    }});
+    }}));
     action = `dm_${result.intent}`;
     if (coolMs > 0) dmCooldown.set(customerKey, Date.now() + coolMs);
     if (result.handoff) {
@@ -146,7 +180,8 @@ export async function processEvent(event, config, send = graphPost) {
         try {
           // Mark BEFORE sending: delivery may have succeeded even if a timeout occurs.
           privateAttempts.set(key, Date.now() + 8 * 24 * 3600 * 1000);
-          await send({ ...common, body: { recipient: { comment_id: event.id }, message: { text: privateText } } });
+          markBotOutbound(event.platform, [accountId, ...expectedIds], event.senderId);
+          noteBotMid(await send({ ...common, body: { recipient: { comment_id: event.id }, message: { text: privateText } } }));
           privateSent = true;
           // That private message opens the chat. A later reply from the same person is not a new conversation.
           if (event.senderId && coolMs > 0) dmCooldown.set(customerKey, Date.now() + coolMs);
@@ -173,4 +208,5 @@ export async function processEvent(event, config, send = graphPost) {
 
 export function resetTestState() {
   recent.clear(); paused.clear(); inFlight.clear(); privateAttempts.clear(); dmCooldown.clear();
+  botMids.clear(); botOutboundUntil.clear();
 }
