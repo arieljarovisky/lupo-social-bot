@@ -118,13 +118,33 @@ export function extractEvents(payload) {
   return events;
 }
 
+export function graphPath(path) {
+  const normalized = String(path ?? '');
+  if (!/^[a-zA-Z0-9_./-]+$/.test(normalized) || normalized.includes('..')) throw new Error('Ruta Graph inválida');
+  return normalized;
+}
+
+export async function graphGet({ platform = 'instagram', path, query = {}, token, version = 'v26.0', fetchFn = fetch }) {
+  if (!token) throw new Error(`Falta token de ${platform}`);
+  const domain = platform === 'instagram' ? 'graph.instagram.com' : 'graph.facebook.com';
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value != null && value !== '') params.set(key, String(value));
+  }
+  const response = await fetchFn(`https://${domain}/${version}/${graphPath(path)}?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Graph ${platform} HTTP ${response.status}: ${JSON.stringify(data).slice(0, 700)}`);
+  return data;
+}
+
 export async function graphPost({ platform, accountId, path, token, body, version = 'v26.0', dryRun = true, fetchFn = fetch }) {
   if (dryRun) return { dryRun: true, platform, path, body };
   if (!token) throw new Error(`Falta token de ${platform}`);
   const domain = platform === 'instagram' ? 'graph.instagram.com' : 'graph.facebook.com';
-  const normalized = path || `${accountId}/messages`;
-  // Never interpolate external URLs supplied by customers.
-  if (!/^[a-zA-Z0-9_./-]+$/.test(normalized) || normalized.includes('..')) throw new Error('Ruta Graph inválida');
+  const normalized = graphPath(path || `${accountId}/messages`);
   const response = await fetchFn(`https://${domain}/${version}/${normalized}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

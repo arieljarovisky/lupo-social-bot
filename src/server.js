@@ -6,6 +6,7 @@ import { signatureProblem, extractEvents, cleanSecret } from './meta.js';
 import { processEvent } from './bot.js';
 import { answerFor, publicCommentFor, getCatalog, setCatalog, previewFor } from './replies.js';
 import { getMappings, addMapping, updateMapping, deleteMapping } from './media-products.js';
+import { listInstagramMedia } from './ig-media.js';
 
 const env = process.env;
 const config = {
@@ -177,6 +178,19 @@ app.post('/api/preview', requireAdmin, (req, res) => {
     res.status(400).json({ error: err.message });
   } finally {
     if (req.body?.catalog) setCatalog(previous, { persist: false });
+  }
+});
+
+app.get('/api/ig-media', requireAdmin, async (req, res) => {
+  try {
+    const result = await listInstagramMedia(config, {
+      q: req.query.q,
+      after: req.query.after
+    });
+    res.json(result);
+  } catch (err) {
+    const missing = /No encontré esa publicación/.test(err.message);
+    res.status(missing ? 404 : 400).json({ error: err.message });
   }
 });
 
