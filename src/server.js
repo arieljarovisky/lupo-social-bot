@@ -37,7 +37,7 @@ app.get('/webhook', (req, res) => {
 });
 
 // MUST keep the body raw for HMAC validation; do not use express.json() before this route.
-app.post('/webhook', express.raw({ type: () => true, limit: '256kb' }), (req, res) => {
+app.post('/webhook', express.raw({ type: () => true, limit: '256kb' }), async (req, res) => {
   const header = req.get('x-hub-signature-256') || req.get('x-hub-signature') || '';
   const problem = signatureProblem(req.body, header, env.META_APP_SECRET);
   if (problem) {
@@ -83,7 +83,17 @@ app.post('/webhook', express.raw({ type: () => true, limit: '256kb' }), (req, re
   }
   // Acknowledge quickly. For production, enqueue durably BEFORE ACK (Redis/BullMQ).
   res.status(200).send('EVENT_RECEIVED');
-  for (const event of events) {
+  const echoes = events.filter((event) => event.kind === 'echo');
+  const rest = events.filter((event) => event.kind !== 'echo');
+  for (const event of echoes) {
+    try {
+      const result = await processEvent(event, config);
+      console.log(`[${event.platform}/${event.kind}] ${result.action}`);
+    } catch (err) {
+      console.error(`[PROCESSING FAILURE] ${event.platform}/${event.kind} ${event.id}:`, err.message);
+    }
+  }
+  for (const event of rest) {
     processEvent(event, config).then((result) => {
       console.log(`[${event.platform}/${event.kind}] ${result.action}`);
     }).catch((err) => {

@@ -60,8 +60,7 @@ function isSelf(event, config) {
 
 export async function processEvent(event, config, send = graphPost) {
   cleanExpired();
-  if (!['facebook', 'instagram'].includes(event.platform) || !['comment', 'message'].includes(event.kind) ||
-      !event.id || !event.text || isSelf(event, config)) return { action: 'ignored' };
+  if (!['facebook', 'instagram'].includes(event.platform)) return { action: 'ignored' };
 
   // Instagram Login and the classic IG ID are both valid for the same account.
   const expectedIds = event.platform === 'instagram' ? idList(config.igUserId) : idList(config.fbPageId);
@@ -74,6 +73,15 @@ export async function processEvent(event, config, send = graphPost) {
   }
   if (event.platform === 'facebook' && !incoming) return { action: 'ignored_account' };
   const accountId = incoming && incoming !== '0' ? incoming : expected;
+  if (event.kind === 'echo') {
+    if (!event.senderId || expectedIds.includes(String(event.senderId))) return { action: 'ignored' };
+    const coolMs = dmCooldownMs(config);
+    if (coolMs > 0) dmCooldown.set(`${event.platform}:${accountId}:${event.senderId}`, Date.now() + coolMs);
+    return { action: 'outbound_seen' };
+  }
+  if (!['comment', 'message'].includes(event.kind) || !event.id || !event.text || isSelf(event, config)) {
+    return { action: 'ignored' };
+  }
   const key = `${event.platform}:${event.kind}:${accountId}:${event.id}`;
   if (recent.has(key) || inFlight.has(key)) return { action: 'duplicate' };
   const customerKey = `${event.platform}:${accountId}:${event.senderId}`;
@@ -94,6 +102,12 @@ export async function processEvent(event, config, send = graphPost) {
   let action;
 
   if (event.kind === 'message') {
+    // A reply to a story or to a message already in the thread is not a new chat.
+    if ((event.storyReply || event.replyTo) && result.intent === 'unknown') {
+      recent.set(key, Date.now() + DEDUP_MS);
+      if (coolMs > 0) dmCooldown.set(customerKey, Date.now() + coolMs);
+      return { action: event.storyReply ? 'story_reply' : 'thread_reply' };
+    }
     // After the chat is open, stay quiet unless the message matches a known reply.
     if (coolMs > 0 && dmCooldown.has(customerKey) && result.intent === 'unknown') {
       recent.set(key, Date.now() + DEDUP_MS);

@@ -49,15 +49,30 @@ export function extractEvents(payload) {
   for (const entry of payload?.entry ?? []) {
     const accountId = usableAccountId(entry.id);
     for (const message of entry.messaging ?? []) {
-      // No echoes, reactions, delivery/read confirmations or messages sent by ourselves.
-      if (!message.message?.text || message.message.is_echo || !message.sender?.id ||
-          String(message.sender.id) === accountId || !message.recipient?.id ||
+      const msg = message.message;
+      // Reactions, delivery and read receipts have no message body.
+      if (!msg || !message.sender?.id || !message.recipient?.id ||
           String(message.sender.id) === String(message.recipient.id)) continue;
+      const platform = payload.object === 'instagram' ? 'instagram' : 'facebook';
+      const outbound = Boolean(msg.is_echo) || (accountId && String(message.sender.id) === accountId);
+      if (outbound) {
+        // A story share or DM sent from the inbox already opened the chat.
+        const customerId = String(message.recipient.id);
+        if (!customerId || customerId === accountId) continue;
+        events.push({
+          platform, kind: 'echo', accountId, senderId: customerId,
+          id: String(msg.mid ?? ''), text: String(msg.text ?? ''),
+          timestamp: Number(message.timestamp ?? Date.now())
+        });
+        continue;
+      }
+      if (!msg.text) continue;
       events.push({
-        platform: payload.object === 'instagram' ? 'instagram' : 'facebook',
-        kind: 'message', accountId, senderId: String(message.sender.id),
-        id: String(message.message.mid ?? ''), text: message.message.text,
-        timestamp: Number(message.timestamp ?? Date.now())
+        platform, kind: 'message', accountId, senderId: String(message.sender.id),
+        id: String(msg.mid ?? ''), text: msg.text,
+        timestamp: Number(message.timestamp ?? Date.now()),
+        storyReply: Boolean(msg.reply_to?.story),
+        replyTo: Boolean(msg.reply_to)
       });
     }
     if (payload.object === 'instagram') {

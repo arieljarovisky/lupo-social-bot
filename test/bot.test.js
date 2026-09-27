@@ -54,7 +54,7 @@ test('verifica HMAC sobre body raw, rechaza firmas incorrectas', () => {
   assert.equal(verifySignature(unicode, unicodeHeader, 'secret'), true);
 });
 
-test('extrae DMs/comentarios en ambas redes y descarta ecos y respuestas anidadas', () => {
+test('extrae DMs/comentarios en ambas redes, marca ecos salientes y descarta respuestas anidadas', () => {
   const fb = extractEvents({ object: 'page', entry: [{ id: 'page123', messaging: [
     { sender: { id: 'c1' }, recipient: { id: 'page123' }, message: { mid: 'm1', text: 'Hola' } },
     { sender: { id: 'page123' }, recipient: { id: 'c1' }, message: { mid: 'm2', text: 'Eco', is_echo: true } }
@@ -67,7 +67,8 @@ test('extrae DMs/comentarios en ambas redes y descarta ecos y respuestas anidada
     id: 'ig123', field: 'comments',
     value: { id: 'i3', text: 'Precio', from: { id: 'c1' }, media: { id: 'm9' }, parent_id: 'm9' }
   }] });
-  assert.deepEqual(fb.map((x) => x.id), ['m1', 'f1']);
+  assert.deepEqual(fb.filter((x) => x.kind !== 'echo').map((x) => x.id), ['m1', 'f1']);
+  assert.equal(fb.find((x) => x.kind === 'echo').senderId, 'c1');
   assert.deepEqual(igFlat.map((x) => x.id), ['i3']);
   const igZero = extractEvents({ object: 'instagram', entry: [{
     id: '0', time: 1, changes: [{ field: 'comments', value: { id: 'i4', text: 'precio', parent_id: '999', from: { id: 'c1' } } }]
@@ -99,6 +100,45 @@ test('DM cooldown evita otra auto-respuesta al mismo cliente; handoff sí pasa',
   // Otro usuario no queda bloqueado por el cooldown del primero.
   assert.equal((await processEvent({ ...base, id: 'c4', senderId: 'c4', text: 'hola' }, cfg, send)).action, 'dm_unknown');
   assert.equal(sent.length, 3);
+});
+
+test('compartir una historia abre el chat y no saluda cuando responden', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const now = Date.now();
+  const events = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', messaging: [
+    { sender: { id: 'ig123' }, recipient: { id: 'c9' }, timestamp: now, message: { mid: 'out1', is_echo: true, attachments: [{ type: 'share' }] } },
+    { sender: { id: 'c9' }, recipient: { id: 'ig123' }, timestamp: now, message: { mid: 'in1', text: 'Ahí la resubi' } }
+  ] }] });
+  assert.equal(events[0].kind, 'echo');
+  assert.equal(events[0].senderId, 'c9');
+  assert.equal((await processEvent(events[0], cfg, send)).action, 'outbound_seen');
+  assert.equal((await processEvent(events[1], cfg, send)).action, 'dm_cooldown');
+  assert.equal(sent.length, 0);
+  assert.equal((await processEvent({ platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c9', id: 'in2', text: 'precio?' }, cfg, send)).action, 'dm_price');
+  assert.equal(sent.length, 1);
+});
+
+test('responder una historia no dispara el saludo automático', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const now = Date.now();
+  const events = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', messaging: [
+    { sender: { id: 'c9' }, recipient: { id: 'ig123' }, timestamp: now, message: {
+      mid: 'story1', text: 'Ahí la resubi',
+      reply_to: { story: { id: 's1', url: 'https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1' } }
+    } }
+  ] }] });
+  assert.equal(events[0].storyReply, true);
+  assert.equal((await processEvent(events[0], cfg, send)).action, 'story_reply');
+  assert.equal(sent.length, 0);
+  const price = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', messaging: [
+    { sender: { id: 'c10' }, recipient: { id: 'ig123' }, timestamp: now, message: {
+      mid: 'story2', text: 'precio?', reply_to: { story: { id: 's1' } }
+    } }
+  ] }] });
+  assert.equal((await processEvent(price[0], cfg, send)).action, 'dm_price');
+  assert.equal(sent.length, 1);
 });
 
 test('DM_COOLDOWN_HOURS=0 desactiva el cooldown por conversación', async () => {
