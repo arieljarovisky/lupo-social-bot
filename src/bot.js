@@ -1,4 +1,4 @@
-import { answerFor, publicCommentFor, privateReplyFor, privateCommentNotice } from './replies.js';
+import { answerFor, classify, publicCommentFor, privateReplyFor, privateCommentNotice } from './replies.js';
 import { graphPost } from './meta.js';
 import { getProductForMedia } from './media-products.js';
 
@@ -163,18 +163,21 @@ export async function processEvent(event, config, send = graphPost) {
     }
   } else {
     const product = event.mediaId ? getProductForMedia(event.mediaId) : null;
-    const customPublic = product?.comment ? renderMappingReply(product.comment, product, opts) : '';
+    const intentId = product ? classify(event.text, opts).intent : '';
+    const override = product?.replies?.[intentId] || {};
+    const publicTemplate = override.comment || product?.comment || '';
+    const privateTemplate = override.dm || product?.reply || '';
+    const customPublic = product && publicTemplate ? renderMappingReply(publicTemplate, product, opts) : '';
+    const customPrivate = product && privateTemplate ? renderMappingReply(privateTemplate, product, opts) : '';
     const text = customPublic || publicCommentFor(event.text, opts);
     if (!text && !product) return { action: 'comment_without_keyword' };
     // Optional IG private reply before public reply. Exactly one attempt per comment.
     let privateSent = false;
     if (event.platform === 'instagram' && config.igPrivateReplies && !privateAttempts.has(key)) {
-      let privateText = privateReplyFor(event.text, opts);
-      if (product?.reply) {
-        privateText = renderMappingReply(product.reply, product, opts);
-      } else if (product && privateText) {
+      let privateText = customPrivate || privateReplyFor(event.text, opts);
+      if (!customPrivate && product && privateText) {
         privateText = `${privateText}\n\n🛒 ${product.productName}: ${product.productUrl}`;
-      } else if (product && !privateText) {
+      } else if (!customPrivate && product && !privateText) {
         privateText = `¡Hola! 💙 Acá tenés el link del producto:\n\n🛒 ${product.productName}: ${product.productUrl}`;
       }
       if (privateText) {

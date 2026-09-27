@@ -472,6 +472,43 @@ test('un comentario en un post asociado usa la respuesta pública de esa publica
   assert.equal(result.action, 'comment_price_private');
   assert.equal(sent[1].body.message, 'Este post es el Boxer Clásico. Mirá el DM 📩');
   assert.doesNotMatch(sent[1].body.message, /cuánto|tienda/i);
+  const size = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'comment6', senderId: 'user3', text: 'talle',
+    mediaId: '17900000000000005'
+  };
+  await processEvent(size, { ...cfg, igPrivateReplies: true }, send);
+  assert.equal(sent.at(-2).body.message.text, 'Privado del Boxer Clásico: https://lupo.ar/productos/boxer');
+  assert.equal(sent.at(-1).body.message, 'Este post es el Boxer Clásico. Mirá el DM 📩');
+  assert.doesNotMatch(sent.at(-2).body.message.text, /talle ideal|medidas/i);
+  assert.doesNotMatch(sent.at(-1).body.message, /ayudarte con el talle/i);
+  resetMappings({ persist: false });
+  addMapping({
+    mediaId: '17900000000000006',
+    productUrl: 'https://lupo.ar/productos/boxer',
+    productName: 'Boxer Clásico',
+    reply: 'Privado general',
+    comment: 'Comentario general',
+    replies: {
+      size: { comment: 'Talle de este boxer', dm: 'Te paso el talle de este boxer' }
+    }
+  }, { persist: false });
+  const customSize = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'comment7', senderId: 'user4', text: 'qué talle',
+    mediaId: '17900000000000006'
+  };
+  await processEvent(customSize, { ...cfg, igPrivateReplies: true }, send);
+  assert.equal(sent.at(-2).body.message.text, 'Te paso el talle de este boxer');
+  assert.equal(sent.at(-1).body.message, 'Talle de este boxer');
+  const customPrice = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'comment8', senderId: 'user5', text: 'precio',
+    mediaId: '17900000000000006'
+  };
+  await processEvent(customPrice, { ...cfg, igPrivateReplies: true }, send);
+  assert.equal(sent.at(-2).body.message.text, 'Privado general');
+  assert.equal(sent.at(-1).body.message, 'Comentario general');
   const other = {
     platform: 'instagram', kind: 'comment', accountId: 'ig123',
     id: 'comment5', senderId: 'user2', text: 'precio?',

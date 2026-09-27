@@ -4,6 +4,7 @@ import { dataFile } from './data-dir.js';
 
 const DATA_PATH = dataFile('media-products.json');
 const MEDIA_ID_RE = /^\d{10,25}$/;
+const INTENT_ID_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const URL_RE = /^https?:\/\/.+/;
 const MAX_MAPPINGS = 500;
 const MAX_NAME_LENGTH = 120;
@@ -67,10 +68,25 @@ export function validateStore(input) {
       productName,
       reply,
       comment,
+      replies: cleanReplies(raw.replies),
       enabled: raw.enabled !== false
     };
   });
   return { version: 1, mappings };
+}
+
+function cleanReplies(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const entries = Object.entries(raw);
+  if (entries.length > 20) throw new Error('Hay demasiadas respuestas personalizadas en un post.');
+  const replies = {};
+  for (const [id, value] of entries) {
+    if (!INTENT_ID_RE.test(id) || id === 'unknown' || !value || typeof value !== 'object') continue;
+    const comment = String(value.comment ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_COMMENT);
+    const dm = String(value.dm ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_REPLY);
+    if (comment || dm) replies[id] = { comment, dm };
+  }
+  return replies;
 }
 
 export function getMappings() {
@@ -86,7 +102,8 @@ export function getProductForMedia(mediaId) {
       productUrl: mapping.productUrl,
       productName: mapping.productName,
       reply: mapping.reply || '',
-      comment: mapping.comment || ''
+      comment: mapping.comment || '',
+      replies: mapping.replies || {}
     }
     : null;
 }

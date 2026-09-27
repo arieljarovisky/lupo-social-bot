@@ -87,6 +87,9 @@
     .ig-thumb.ph { display: grid; place-items: center; color: var(--muted); font-size: 11px; text-align: center; padding: 4px; }
     .ig-copy { flex: 1; min-width: 0; }
     .ig-id { font-family: Consolas, ui-monospace, monospace; font-size: 13px; word-break: break-all; margin: 2px 0; }
+    details.intent { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+    details.intent summary { cursor: pointer; font-weight: 700; }
+    details.intent textarea { margin-top: 8px; min-height: 72px; }
   </style>
 </head>
 <body>
@@ -154,7 +157,7 @@
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <div>
           <h2>Posts con productos</h2>
-          <p class="hint">Asociá un post de Instagram a un producto. El comentario público de esa publicación usa el texto de abajo, no la respuesta general. El DM privado lleva el detalle. Hace falta <code>IG_PRIVATE_REPLIES=true</code> para el mensaje privado.</p>
+          <p class="hint">En cada publicación podés escribir el mensaje general y, si querés, uno distinto para talle, precio y el resto. Si un caso queda vacío, se usa el mensaje general de ese post. Hace falta <code>IG_PRIVATE_REPLIES=true</code> para el privado.</p>
         </div>
       </div>
       <div class="card" style="margin-bottom:16px">
@@ -192,8 +195,9 @@
         <div style="margin-bottom:12px">
           <label for="newReply">Mensaje privado de esta publicación</label>
           <textarea id="newReply" placeholder="¡Hola! 💙 En este post está el {{nombre}}. Lo ves acá: {{url}}"></textarea>
-          <p class="hint">Variables en los dos textos: <code>{{nombre}}</code>, <code>{{url}}</code>, <code>{{store}}</code> y <code>{{whatsapp}}</code>. Dejá un espacio antes de cada una.</p>
+          <p class="hint">Estos dos valen para cualquier comentario de este post. Abajo podés cambiar solo talle, precio u otro caso. Variables: <code>{{nombre}}</code>, <code>{{url}}</code>, <code>{{store}}</code> y <code>{{whatsapp}}</code>.</p>
         </div>
+        <div id="newIntentReplies"></div>
         <label class="check" style="margin-bottom:12px">
           <input id="newEnabled" type="checkbox" checked> Habilitado
         </label>
@@ -391,6 +395,37 @@
       $('previewMeta').textContent = `Intención: ${result.intent}${result.handoff ? ' · deriva a un humano' : ''}`;
     }
 
+    function intentEditors(replies = {}) {
+      const intents = (state.catalog?.intents || []).filter((intent) => intent.id !== 'unknown');
+      if (!intents.length) return '';
+      return `<div class="intent-overrides"><p class="hint">Personalizá un caso. Si lo dejás vacío, se usa el mensaje general de esta publicación.</p>${intents.map((intent) => {
+        const saved = replies?.[intent.id] || {};
+        return `<details class="intent">
+          <summary>${escapeAttr(intent.label)}</summary>
+          <label>Comentario</label>
+          <textarea class="intent-comment" data-intent="${escapeAttr(intent.id)}">${escapeText(saved.comment || '')}</textarea>
+          <label>Mensaje privado</label>
+          <textarea class="intent-dm" data-intent="${escapeAttr(intent.id)}">${escapeText(saved.dm || '')}</textarea>
+        </details>`;
+      }).join('')}</div>`;
+    }
+
+    function collectReplies(root) {
+      const replies = {};
+      root.querySelectorAll('[data-intent]').forEach((el) => {
+        const id = el.dataset.intent;
+        if (!replies[id]) replies[id] = { comment: '', dm: '' };
+        if (el.classList.contains('intent-comment')) replies[id].comment = el.value.trim();
+        if (el.classList.contains('intent-dm')) replies[id].dm = el.value.trim();
+      });
+      return replies;
+    }
+
+    function renderNewIntentEditors() {
+      const box = $('newIntentReplies');
+      if (box) box.innerHTML = intentEditors();
+    }
+
     function renderMappings() {
       const container = $('mappings');
       if (!state.mappings.length) {
@@ -426,6 +461,7 @@
             <label>Mensaje privado de esta publicación</label>
             <textarea class="reply">${escapeText(m.reply || '')}</textarea>
           </div>
+          ${intentEditors(m.replies)}
           <div class="row" style="justify-content:space-between">
             <label class="check">
               <input class="mappingEnabled" type="checkbox" ${m.enabled ? 'checked' : ''}> Habilitado
@@ -463,7 +499,7 @@
           try {
             const result = await api(`/api/media-products/${encodeURIComponent(mediaId)}`, {
               method: 'PUT',
-              body: JSON.stringify({ productUrl, productName, reply, comment, enabled })
+              body: JSON.stringify({ productUrl, productName, reply, comment, replies: collectReplies(card), enabled })
             });
             const index = state.mappings.findIndex((m) => m.mediaId === mediaId);
             if (index !== -1) state.mappings[index] = result.mapping;
@@ -500,6 +536,7 @@
       $('privateSuffix').value = data.catalog.extras.privateReplySuffix;
       renderPills();
       renderIntents();
+      renderNewIntentEditors();
       await loadMappings();
       $('app').classList.remove('hidden');
       $('savebar').classList.remove('hidden');
@@ -718,7 +755,11 @@
       try {
         const result = await api('/api/media-products', {
           method: 'POST',
-          body: JSON.stringify({ mediaId, productName, productUrl, reply, comment, enabled })
+          body: JSON.stringify({
+            mediaId, productName, productUrl, reply, comment,
+            replies: collectReplies($('newIntentReplies')),
+            enabled
+          })
         });
         state.mappings.push(result.mapping);
         renderMappings();
@@ -727,6 +768,7 @@
         $('newProductUrl').value = '';
         $('newReply').value = '';
         $('newComment').value = '';
+        renderNewIntentEditors();
         $('newEnabled').checked = true;
         $('mappingsStatus').textContent = 'Mapeo agregado.';
         $('mappingsStatus').className = 'hint';
