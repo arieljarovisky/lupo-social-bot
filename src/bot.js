@@ -45,6 +45,11 @@ function renderMappingReply(product, opts) {
     .replaceAll('{{url}}', product.productUrl);
 }
 
+function withoutOpeningGreeting(text) {
+  const continued = String(text ?? '').replace(/^\s*¡?\s*hola\s*!?\s*(?:💙\s*)?/i, '').trim();
+  return continued || String(text ?? '');
+}
+
 function isSelf(event, config) {
   const ours = event.platform === 'instagram' ? idList(config.igUserId) : idList(config.fbPageId);
   if (event.senderId && ours.includes(String(event.senderId))) return true;
@@ -89,15 +94,17 @@ export async function processEvent(event, config, send = graphPost) {
   let action;
 
   if (event.kind === 'message') {
-    // One auto-reply per conversation window; claims/handoff still get through.
-    if (coolMs > 0 && !result.handoff && dmCooldown.has(customerKey)) {
+    // After the chat is open, stay quiet unless the message matches a known reply.
+    if (coolMs > 0 && dmCooldown.has(customerKey) && result.intent === 'unknown') {
       recent.set(key, Date.now() + DEDUP_MS);
       return { action: 'dm_cooldown' };
     }
+    const alreadyChatting = coolMs > 0 && dmCooldown.has(customerKey);
+    const text = alreadyChatting ? withoutOpeningGreeting(result.text) : result.text;
     await send({ ...common, body: {
       recipient: { id: event.senderId },
       messaging_type: event.platform === 'facebook' ? 'RESPONSE' : undefined,
-      message: { text: result.text }
+      message: { text }
     }});
     action = `dm_${result.intent}`;
     if (coolMs > 0) dmCooldown.set(customerKey, Date.now() + coolMs);

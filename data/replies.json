@@ -115,9 +115,13 @@
         "mercado ?pago",
         "efectivo",
         "medios de pago",
-        "c[oó]mo (se )?paga"
+        "formas de pago",
+        "c[oó]mo (se )?(puede |puedo )?pagar",
+        "c[oó]mo pago",
+        "puedo pagar",
+        "se puede pagar"
       ],
-      "dm": "¡Hola! 💙 Podés pagar con tarjeta o transferencia directamente en {{store}} 💳 Al finalizar la compra vas a ver todas las opciones y cuotas disponibles.",
+      "dm": "¡Hola! 💙 Tenés 6 cuotas sin interés o 15% de descuento pagando por transferencia. Lo hacés directo en {{store}} 💳",
       "comment": "¡Hola! 💙 Te pasamos los medios de pago por privado 💳"
     },
     {

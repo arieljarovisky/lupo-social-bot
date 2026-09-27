@@ -140,7 +140,13 @@ test('un DM posterior al mensaje privado no recibe otra respuesta automática', 
   const reply = { platform: 'instagram', kind: 'message', accountId: 'ig123', id: 'm30', senderId: 'c8', text: 'dale, gracias' };
   assert.equal((await processEvent(reply, cfg, send)).action, 'dm_cooldown');
   assert.equal(sent.length, 2);
+  const payment = await processEvent({ ...reply, id: 'm32', text: 'cómo se puede pagar' }, cfg, send);
+  assert.equal(payment.action, 'dm_payment');
+  assert.match(sent[2].body.message.text, /^Tenés 6 cuotas sin interés/);
+  assert.doesNotMatch(sent[2].body.message.text, /hola/i);
+  assert.equal((await processEvent({ ...reply, id: 'm33', text: 'ok' }, cfg, send)).action, 'dm_cooldown');
   assert.equal((await processEvent({ ...reply, id: 'm31', senderId: 'otro', text: 'hola' }, cfg, send)).action, 'dm_unknown');
+  assert.match(sent.at(-1).body.message.text, /^¡Hola!/);
 });
 
 test('Graph client dry run does not make network calls', async () => {
@@ -186,6 +192,7 @@ test('clasifica las consultas de Instagram en la intención pedida', () => {
     ['¿hay en L?', 'stock', false],
     ['¿hay en XL?', 'stock', false],
     ['¿se puede pagar en cuotas?', 'payment', false],
+    ['cómo se puede pagar', 'payment', false],
     ['¿tienen descuento?', 'promo', false],
     ['vendo por mayor, ¿tienen lista?', 'wholesale', false],
     ['quiero hablar con una persona', 'handoff', true],
@@ -210,7 +217,8 @@ test('clasifica las consultas de Instagram en la intención pedida', () => {
   assert.match(answerFor('reclamo', opts).text, /: https:\/\/wa\.me\/5491170590570/);
   assert.doesNotMatch(answerFor('reclamo', opts).text, /  https:/);
   assert.doesNotMatch(answerFor('¿se puede pagar en cuotas?', opts).text, /Mercado Pago/i);
-  assert.match(answerFor('¿se puede pagar en cuotas?', opts).text, /tarjeta o transferencia/);
+  assert.match(answerFor('¿se puede pagar en cuotas?', opts).text, /6 cuotas sin interés/);
+  assert.match(answerFor('¿se puede pagar en cuotas?', opts).text, /15% de descuento/);
   assert.doesNotMatch(publicCommentFor('precio') || '', /https?:/);
   assert.doesNotMatch(publicCommentFor('cuotas') || '', /https?:/);
 });
