@@ -3,3 +3,7 @@ node_modules/
 *.log
 .DS_Store
 *.tmp
+
+# Base en uso. Un push no debe subirla ni pisarla.
+data/replies.json
+data/media-products.json

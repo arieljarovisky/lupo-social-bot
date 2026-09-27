@@ -1,9 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { dataFile } from './data-dir.js';
+import { dirname } from 'node:path';
+import { bundledFile, dataFile } from './data-dir.js';
 
-const BUNDLED_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'replies.json');
+const BUNDLED_PATH = bundledFile('replies.json');
 const DATA_PATH = dataFile('replies.json');
 const ID_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const MAX_INTENTS = 20;
