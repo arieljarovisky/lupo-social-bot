@@ -1,7 +1,14 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { dataFile } from './data-dir.js';
-import { getSetting, isMysqlConfigured, setSetting, SETTINGS } from './db.js';
+import {
+  deleteMediaMapping,
+  insertMediaMapping,
+  isMysqlConfigured,
+  loadMappings,
+  saveMappings,
+  updateMediaMapping
+} from './db.js';
 
 const DATA_PATH = dataFile('media-products.json');
 const MEDIA_ID_RE = /^\d{10,25}$/;
@@ -35,7 +42,7 @@ function persistFile(next) {
 
 async function persist(next) {
   if (isMysqlConfigured()) {
-    await setSetting(SETTINGS.MEDIA, next);
+    await saveMappings(next.mappings);
     return;
   }
   persistFile(next);
@@ -48,15 +55,15 @@ export function defaultMediaStore() {
 /** Reload mappings from MySQL after initDb. No-op in file mode. */
 export async function hydrateMappings() {
   if (!isMysqlConfigured()) return getMappings();
-  const stored = await getSetting(SETTINGS.MEDIA);
+  const stored = await loadMappings();
   if (stored == null) {
     store = structuredClone(DEFAULTS);
     return getMappings();
   }
   try {
-    store = validateStore(stored);
+    store = validateStore({ version: 1, mappings: stored });
   } catch (err) {
-    console.error('[MEDIA-PRODUCTS] Payload MySQL inválido, uso defaults:', err.message);
+    console.error('[MEDIA-PRODUCTS] Datos MySQL inválidos, uso defaults:', err.message);
     store = structuredClone(DEFAULTS);
   }
   return getMappings();
@@ -147,7 +154,10 @@ export async function addMapping(data, { persist: shouldPersist = true } = {}) {
     throw new Error(`Máximo ${MAX_MAPPINGS} mappings permitidos.`);
   }
   store.mappings.push(mapping);
-  if (shouldPersist) await persist(store);
+  if (shouldPersist) {
+    if (isMysqlConfigured()) await insertMediaMapping(mapping);
+    else persistFile(store);
+  }
   return structuredClone(mapping);
 }
 
@@ -159,7 +169,10 @@ export async function updateMapping(mediaId, data, { persist: shouldPersist = tr
   }
   const updated = validateStore({ version: 1, mappings: [{ ...store.mappings[index], ...data, mediaId: id }] }).mappings[0];
   store.mappings[index] = updated;
-  if (shouldPersist) await persist(store);
+  if (shouldPersist) {
+    if (isMysqlConfigured()) await updateMediaMapping(id, updated);
+    else persistFile(store);
+  }
   return structuredClone(updated);
 }
 
@@ -170,7 +183,10 @@ export async function deleteMapping(mediaId, { persist: shouldPersist = true } =
     throw new Error(`No existe un mapping para el mediaId "${id}".`);
   }
   const [removed] = store.mappings.splice(index, 1);
-  if (shouldPersist) await persist(store);
+  if (shouldPersist) {
+    if (isMysqlConfigured()) await deleteMediaMapping(id);
+    else persistFile(store);
+  }
   return structuredClone(removed);
 }
 

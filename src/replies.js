@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { bundledFile, dataFile } from './data-dir.js';
-import { getSetting, isMysqlConfigured, setSetting, SETTINGS } from './db.js';
+import { isMysqlConfigured, loadCatalog, saveCatalog } from './db.js';
 
 const BUNDLED_PATH = bundledFile('replies.json');
 const DATA_PATH = dataFile('replies.json');
@@ -127,7 +127,7 @@ function persistFile(next) {
 
 async function persist(next) {
   if (isMysqlConfigured()) {
-    await setSetting(SETTINGS.REPLIES, next);
+    await saveCatalog(next);
     return;
   }
   persistFile(next);
@@ -141,7 +141,7 @@ export function defaultCatalog() {
 /** Reload catalog from MySQL after initDb. No-op in file mode (already loaded). */
 export async function hydrateCatalog() {
   if (!isMysqlConfigured()) return getCatalog();
-  const stored = await getSetting(SETTINGS.REPLIES);
+  const stored = await loadCatalog();
   if (stored == null) {
     catalog = validateCatalog(DEFAULTS);
     return getCatalog();
@@ -149,7 +149,7 @@ export async function hydrateCatalog() {
   try {
     catalog = validateCatalog(stored);
   } catch (err) {
-    console.error('[REPLIES] Payload MySQL inválido, uso defaults:', err.message);
+    console.error('[REPLIES] Datos MySQL inválidos, uso defaults:', err.message);
     catalog = validateCatalog(DEFAULTS);
   }
   return getCatalog();

@@ -10,7 +10,7 @@ Proyecto propio en **Node.js 22 + Express**, sin Manychat ni IA paga, para **DM 
 - Intenciones: mayoristas, talles, stock, precios, envíos, compras, reclamos.
 - Respuestas públicas breves que no publican información personal, precios de variantes ni stock sin verificar.
 - Respuesta privada opcional **solo para comentario IG**, `IG_PRIVATE_REPLIES=true`: una solicitud por comentario, sin reintento automático; requiere permisos y respetar los límites de Meta. Se desactiva por defecto.
-- Panel web en `/admin` para ver, editar y previsualizar las respuestas de DM y comentarios. Se guardan en **MySQL** (tabla `bot_settings`) cuando hay variables `MYSQL*`; sin ellas, en `data/replies.json` / `data/media-products.json` (local/tests).
+- Panel web en `/admin` para ver, editar y previsualizar las respuestas de DM y comentarios. Se guardan en **MySQL** (tablas `intents`, `intent_keywords`, `bot_extras`, `bot_notices`, `media_products`, `media_product_replies`) cuando hay variables `MYSQL*`; sin ellas, en `data/replies.json` / `data/media-products.json` (local/tests).
 - Reclamos y preguntas no entendidas: mensaje de derivación al humano y **pausa del bot por 24 h** para esa conversación *en memoria*. Debés supervisar la bandeja de Meta: el software NO asigna agentes ni envía notificaciones externas.
 - Dedupe básico durante 48 h en memoria; el catálogo del panel sí es durable en MySQL.
 
