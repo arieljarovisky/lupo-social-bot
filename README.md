@@ -10,9 +10,9 @@ Proyecto propio en **Node.js 22 + Express**, sin Manychat ni IA paga, para **DM 
 - Intenciones: mayoristas, talles, stock, precios, envíos, compras, reclamos.
 - Respuestas públicas breves que no publican información personal, precios de variantes ni stock sin verificar.
 - Respuesta privada opcional **solo para comentario IG**, `IG_PRIVATE_REPLIES=true`: una solicitud por comentario, sin reintento automático; requiere permisos y respetar los límites de Meta. Se desactiva por defecto.
-- Panel web en `/admin` para ver, editar y previsualizar las respuestas de DM y comentarios. Se guardan en `data/replies.json` y el bot las usa en caliente.
+- Panel web en `/admin` para ver, editar y previsualizar las respuestas de DM y comentarios. Se guardan en **MySQL** (tabla `bot_settings`) cuando hay variables `MYSQL*`; sin ellas, en `data/replies.json` / `data/media-products.json` (local/tests).
 - Reclamos y preguntas no entendidas: mensaje de derivación al humano y **pausa del bot por 24 h** para esa conversación *en memoria*. Debés supervisar la bandeja de Meta: el software NO asigna agentes ni envía notificaciones externas.
-- Dedupe básico durante 48 h en memoria; sin base de datos ni cola persistente todavía.
+- Dedupe básico durante 48 h en memoria; el catálogo del panel sí es durable en MySQL.
 
 **No incluido aún**: IA generativa, consulta de productos/stock en tiempo real, panel React, carga de conversaciones históricas, almacenamiento de leads, WhatsApp API, reintentos durables, soporte de múltiples negocios ni activación en cuentas reales. Los campos `TIENDANUBE_*` son reservas para la siguiente etapa; todavía NO realizan consultas.
 
@@ -50,7 +50,7 @@ Editar `.env`. Para el simulador, crear un `SIMULATOR_TOKEN` aleatorio distinto 
 npm run dev
 ```
 
-Visitar `http://127.0.0.1:3000/health` para comprobar el estado, o `http://127.0.0.1:3000/admin` para editar las respuestas. En localhost el panel abre sin token; en Railway u otro host público definí `ADMIN_TOKEN`. En Railway hace falta un volumen montado en `/data` y la variable `DATA_DIR=/data`; si no, cada deploy borra las respuestas y los posts guardados desde el panel.
+Visitar `http://127.0.0.1:3000/health` para comprobar el estado, o `http://127.0.0.1:3000/admin` para editar las respuestas. En localhost el panel abre sin token; en Railway u otro host público definí `ADMIN_TOKEN`. En Railway vinculá el servicio MySQL al bot (variables `MYSQLHOST`, `MYSQLUSER`, `MYSQLPASSWORD`, `MYSQLDATABASE`, `MYSQLPORT`); `/health` debe devolver `"storage":"mysql"`. Sin MySQL, el panel usa archivos locales (solo útil en desarrollo).
 
 ### Probar respuestas sin conectar Meta
 
@@ -68,14 +68,13 @@ El simulador exige IP loopback y token secreto; no está diseñado para invocaci
 Esta variante funciona con Railway: `npm start` **no depende de tener un archivo `.env` en el servidor**; Railway inyecta variables de entorno. El servidor escucha en `0.0.0.0` y en el `PORT` asignado por Railway.
 
 1. Subí **solo la carpeta `lupo-social-bot`** a un repositorio privado de GitHub. `.gitignore` excluye `.env`, pero verificá con `git status` antes de publicar. No subas un `.env` con secretos.
-2. Railway > New Project > Deploy from GitHub Repo > elegí el repo; el directorio raíz es el que contiene `package.json`. No hace falta instalar una base de datos para probar el handshake.
-3. Service > Variables: `META_VERIFY_TOKEN`, `META_APP_SECRET`, `DRY_RUN=true`, `DATA_DIR=/data` y, cuando puedas generarlos, `IG_USER_ID`, `IG_ACCESS_TOKEN`, `FB_PAGE_ID`, `FB_PAGE_ACCESS_TOKEN`. `META_VERIFY_TOKEN` debe ser aleatorio y coincidir con el campo de Meta; `META_APP_SECRET` es el secreto real de la app (no lo compartas). No cargues `PORT` salvo necesidad especial.
-4. Service > Volumes > Add volume, mount path `/data`. Ahí quedan `replies.json` y `media-products.json`. El primer arranque copia los archivos del repo solo si el volumen está vacío; los cambios del panel no se pisan en el deploy siguiente.
-5. Settings > Networking > Generate Domain. Comprobá `https://DOMINIO.up.railway.app/health`; esperá `{"ok":true,"simulation":true}`.
-6. En Meta > Instagram API > Webhooks: Callback URL = `https://DOMINIO.up.railway.app/webhook` y Verify Token = valor de `META_VERIFY_TOKEN`; pulsá Verificar y guardar. La app puede requerir estar publicada y permisos aprobados para eventos reales; tener la URL verificada no los concede.
-7. Mantené `DRY_RUN=true` hasta probar roles/permisos/eventos y endurecer la persistencia. En el MVP el procesamiento ocurre tras devolver HTTP 200 y los datos de deduplicación viven en memoria; un reinicio puede perder eventos o generar duplicados. **No es adecuado para atención comercial desatendida en producción** sin cola y almacenamiento durable. Las respuestas del panel sí persisten si el volumen `/data` está montado.
+2. Railway > New Project > Deploy from GitHub Repo > elegí el repo; el directorio raíz es el que contiene `package.json`. Agregá un servicio **MySQL** al mismo proyecto y vinculalo al bot (Railway inyecta `MYSQLHOST`, `MYSQLUSER`, `MYSQLPASSWORD`, `MYSQLDATABASE`, `MYSQLPORT`).
+3. Service > Variables: `META_VERIFY_TOKEN`, `META_APP_SECRET`, `DRY_RUN=true` y, cuando puedas generarlos, `IG_USER_ID`, `IG_ACCESS_TOKEN`, `FB_PAGE_ID`, `FB_PAGE_ACCESS_TOKEN`. `META_VERIFY_TOKEN` debe ser aleatorio y coincidir con el campo de Meta; `META_APP_SECRET` es el secreto real de la app (no lo compartas). No cargues `PORT` salvo necesidad especial. No hace falta volumen ni `DATA_DIR` si MySQL está vinculado.
+4. Settings > Networking > Generate Domain. Comprobá `https://DOMINIO.up.railway.app/health`; esperá `{"ok":true,"simulation":true,"storage":"mysql"}`.
+5. En Meta > Instagram API > Webhooks: Callback URL = `https://DOMINIO.up.railway.app/webhook` y Verify Token = valor de `META_VERIFY_TOKEN`; pulsá Verificar y guardar. La app puede requerir estar publicada y permisos aprobados para eventos reales; tener la URL verificada no los concede.
+6. Mantené `DRY_RUN=true` hasta probar roles/permisos/eventos. En el MVP el procesamiento ocurre tras devolver HTTP 200 y los datos de deduplicación viven en memoria; un reinicio puede perder eventos o generar duplicados. **No es adecuado para atención comercial desatendida en producción** sin cola y almacenamiento durable de eventos. Las respuestas y posts del panel persisten en MySQL entre deploys.
 
-Para desarrollo local: copiar `.env.example` a `.env` y usar `npm run dev`. En Railway: `npm start`.
+Para desarrollo local: copiar `.env.example` a `.env` y usar `npm run dev` (sin MySQL usa archivos en `data/`). En Railway: `npm start` con MySQL vinculado.
 
 ## 3. Meta Developers: conexión real
 
@@ -114,12 +113,14 @@ lupo-social-bot/
   .gitignore
   package.json
   README.md
-  data/replies.json    # textos y palabras clave editables
+  data/defaults/       # seeds iniciales (replies + media-products)
   public/admin.html    # panel para ver y editar respuestas
   src/
     server.js          # servidor Express, webhooks y API del panel
+    db.js              # MySQL (bot_settings) o fallback a archivos
     meta.js            # firma, normalización y llamadas Graph API
     replies.js         # motor de reglas y catálogo
+    media-products.js  # mappings post → producto
     bot.js             # orquestación, dedupe y pausa humana
   test/
     bot.test.js

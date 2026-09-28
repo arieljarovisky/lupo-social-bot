@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { bundledFile, dataFile } from './data-dir.js';
+import { getSetting, isMysqlConfigured, setSetting, SETTINGS } from './db.js';
 
 const BUNDLED_PATH = bundledFile('replies.json');
 const DATA_PATH = dataFile('replies.json');
@@ -117,27 +118,57 @@ function loadFromDisk() {
   }
 }
 
-function persist(next) {
+function persistFile(next) {
   mkdirSync(dirname(DATA_PATH), { recursive: true });
   const tmp = `${DATA_PATH}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   renameSync(tmp, DATA_PATH);
 }
 
+async function persist(next) {
+  if (isMysqlConfigured()) {
+    await setSetting(SETTINGS.REPLIES, next);
+    return;
+  }
+  persistFile(next);
+}
+
+/** Defaults shipped with the repo (for MySQL seed). */
+export function defaultCatalog() {
+  return validateCatalog(DEFAULTS);
+}
+
+/** Reload catalog from MySQL after initDb. No-op in file mode (already loaded). */
+export async function hydrateCatalog() {
+  if (!isMysqlConfigured()) return getCatalog();
+  const stored = await getSetting(SETTINGS.REPLIES);
+  if (stored == null) {
+    catalog = validateCatalog(DEFAULTS);
+    return getCatalog();
+  }
+  try {
+    catalog = validateCatalog(stored);
+  } catch (err) {
+    console.error('[REPLIES] Payload MySQL inválido, uso defaults:', err.message);
+    catalog = validateCatalog(DEFAULTS);
+  }
+  return getCatalog();
+}
+
 export function getCatalog() {
   return structuredClone(catalog);
 }
 
-export function setCatalog(input, { persist: shouldPersist = true } = {}) {
+export async function setCatalog(input, { persist: shouldPersist = true } = {}) {
   const next = validateCatalog(input);
-  if (shouldPersist) persist(next);
   catalog = next;
+  if (shouldPersist) await persist(next);
   return getCatalog();
 }
 
-export function resetCatalog({ persist: shouldPersist = false } = {}) {
+export async function resetCatalog({ persist: shouldPersist = false } = {}) {
   catalog = validateCatalog(DEFAULTS);
-  if (shouldPersist) persist(catalog);
+  if (shouldPersist) await persist(catalog);
   return getCatalog();
 }
 

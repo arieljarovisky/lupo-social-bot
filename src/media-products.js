@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { dataFile } from './data-dir.js';
+import { getSetting, isMysqlConfigured, setSetting, SETTINGS } from './db.js';
 
 const DATA_PATH = dataFile('media-products.json');
 const MEDIA_ID_RE = /^\d{10,25}$/;
@@ -25,11 +26,40 @@ function loadFromDisk() {
   }
 }
 
-function persist(next) {
+function persistFile(next) {
   mkdirSync(dirname(DATA_PATH), { recursive: true });
   const tmp = `${DATA_PATH}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   renameSync(tmp, DATA_PATH);
+}
+
+async function persist(next) {
+  if (isMysqlConfigured()) {
+    await setSetting(SETTINGS.MEDIA, next);
+    return;
+  }
+  persistFile(next);
+}
+
+export function defaultMediaStore() {
+  return structuredClone(DEFAULTS);
+}
+
+/** Reload mappings from MySQL after initDb. No-op in file mode. */
+export async function hydrateMappings() {
+  if (!isMysqlConfigured()) return getMappings();
+  const stored = await getSetting(SETTINGS.MEDIA);
+  if (stored == null) {
+    store = structuredClone(DEFAULTS);
+    return getMappings();
+  }
+  try {
+    store = validateStore(stored);
+  } catch (err) {
+    console.error('[MEDIA-PRODUCTS] Payload MySQL inválido, uso defaults:', err.message);
+    store = structuredClone(DEFAULTS);
+  }
+  return getMappings();
 }
 
 export function validateStore(input) {
@@ -108,7 +138,7 @@ export function getProductForMedia(mediaId) {
     : null;
 }
 
-export function addMapping(data, { persist: shouldPersist = true } = {}) {
+export async function addMapping(data, { persist: shouldPersist = true } = {}) {
   const mapping = validateStore({ version: 1, mappings: [data] }).mappings[0];
   if (store.mappings.some((m) => m.mediaId === mapping.mediaId)) {
     throw new Error(`Ya existe un mapping para el mediaId "${mapping.mediaId}".`);
@@ -117,11 +147,11 @@ export function addMapping(data, { persist: shouldPersist = true } = {}) {
     throw new Error(`Máximo ${MAX_MAPPINGS} mappings permitidos.`);
   }
   store.mappings.push(mapping);
-  if (shouldPersist) persist(store);
+  if (shouldPersist) await persist(store);
   return structuredClone(mapping);
 }
 
-export function updateMapping(mediaId, data, { persist: shouldPersist = true } = {}) {
+export async function updateMapping(mediaId, data, { persist: shouldPersist = true } = {}) {
   const id = String(mediaId ?? '').trim();
   const index = store.mappings.findIndex((m) => m.mediaId === id);
   if (index === -1) {
@@ -129,30 +159,30 @@ export function updateMapping(mediaId, data, { persist: shouldPersist = true } =
   }
   const updated = validateStore({ version: 1, mappings: [{ ...store.mappings[index], ...data, mediaId: id }] }).mappings[0];
   store.mappings[index] = updated;
-  if (shouldPersist) persist(store);
+  if (shouldPersist) await persist(store);
   return structuredClone(updated);
 }
 
-export function deleteMapping(mediaId, { persist: shouldPersist = true } = {}) {
+export async function deleteMapping(mediaId, { persist: shouldPersist = true } = {}) {
   const id = String(mediaId ?? '').trim();
   const index = store.mappings.findIndex((m) => m.mediaId === id);
   if (index === -1) {
     throw new Error(`No existe un mapping para el mediaId "${id}".`);
   }
   const [removed] = store.mappings.splice(index, 1);
-  if (shouldPersist) persist(store);
+  if (shouldPersist) await persist(store);
   return structuredClone(removed);
 }
 
-export function setMappings(mappings, { persist: shouldPersist = true } = {}) {
+export async function setMappings(mappings, { persist: shouldPersist = true } = {}) {
   const next = validateStore({ version: 1, mappings });
-  if (shouldPersist) persist(next);
   store = next;
+  if (shouldPersist) await persist(next);
   return getMappings();
 }
 
-export function resetMappings({ persist: shouldPersist = false } = {}) {
+export async function resetMappings({ persist: shouldPersist = false } = {}) {
   store = structuredClone(DEFAULTS);
-  if (shouldPersist) persist(store);
+  if (shouldPersist) await persist(store);
   return getMappings();
 }

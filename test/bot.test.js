@@ -5,10 +5,41 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { dataFile } from '../src/data-dir.js';
+import { mysqlConfigFromEnv, storageMode } from '../src/db.js';
 import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, resetCatalog, previewFor, privateCommentNotice } from '../src/replies.js';
 import { verifySignature, extractEvents, graphPost, escapeUnicodeForMeta } from '../src/meta.js';
 import { processEvent, resetTestState } from '../src/bot.js';
 import { getMappings, addMapping, updateMapping, deleteMapping, getProductForMedia, resetMappings, validateStore } from '../src/media-products.js';
+
+test('storageMode es file sin MySQL y mysqlConfigFromEnv lee variables Railway', () => {
+  assert.equal(storageMode({}), 'file');
+  assert.equal(mysqlConfigFromEnv({}), null);
+  const cfg = mysqlConfigFromEnv({
+    MYSQLHOST: 'mysql.railway.internal',
+    MYSQLPORT: '3306',
+    MYSQLUSER: 'root',
+    MYSQLPASSWORD: 'secret',
+    MYSQLDATABASE: 'railway'
+  });
+  assert.deepEqual(cfg, {
+    host: 'mysql.railway.internal',
+    port: 3306,
+    user: 'root',
+    password: 'secret',
+    database: 'railway'
+  });
+  assert.equal(storageMode({
+    MYSQLHOST: 'h', MYSQLUSER: 'u', MYSQLDATABASE: 'd'
+  }), 'mysql');
+  const fromUrl = mysqlConfigFromEnv({
+    MYSQL_URL: 'mysql://user:p%40ss@host.example:3307/mydb'
+  });
+  assert.equal(fromUrl.host, 'host.example');
+  assert.equal(fromUrl.port, 3307);
+  assert.equal(fromUrl.user, 'user');
+  assert.equal(fromUrl.password, 'p@ss');
+  assert.equal(fromUrl.database, 'mydb');
+});
 
 test('DATA_DIR no pisa un archivo ya editado en el volumen', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lupo-data-'));
@@ -229,27 +260,27 @@ test('Graph client dry run does not make network calls', async () => {
   assert.equal(result.dryRun, true);
 });
 
-test('el catálogo editable cambia comentarios y se puede restaurar', () => {
+test('el catálogo editable cambia comentarios y se puede restaurar', async () => {
   const original = getCatalog();
   try {
     const next = structuredClone(original);
     const price = next.intents.find((intent) => intent.id === 'price');
     price.comment = 'Comentario de prueba para precio.';
-    setCatalog(next, { persist: false });
+    await setCatalog(next, { persist: false });
     assert.equal(publicCommentFor('¿precio?'), 'Comentario de prueba para precio.');
     assert.match(previewFor('precio').privateReply, /¿Te ayudo con algo más\?/);
     assert.equal(privateReplyFor('Qué lindo'), null);
   } finally {
-    resetCatalog({ persist: false });
+    await resetCatalog({ persist: false });
   }
   assert.equal(publicCommentFor('¿precio?'), original.intents.find((intent) => intent.id === 'price').comment);
 });
 
-test('rechaza un catálogo sin intención unknown o con regex rota', () => {
-  assert.throws(() => setCatalog({ intents: [{ id: 'price', keywords: ['precio'], dm: 'x', comment: 'y' }] }, { persist: false }));
+test('rechaza un catálogo sin intención unknown o con regex rota', async () => {
+  await assert.rejects(() => setCatalog({ intents: [{ id: 'price', keywords: ['precio'], dm: 'x', comment: 'y' }] }, { persist: false }));
   const next = getCatalog();
   next.intents.find((intent) => intent.id === 'price').keywords = ['('];
-  assert.throws(() => setCatalog(next, { persist: false }));
+  await assert.rejects(() => setCatalog(next, { persist: false }));
 });
 
 test('clasifica las consultas de Instagram en la intención pedida', () => {
@@ -297,7 +328,7 @@ test('clasifica las consultas de Instagram en la intención pedida', () => {
   assert.doesNotMatch(publicCommentFor('cuotas') || '', /https?:/);
 });
 
-test('alterna el aviso público y separa links pegados al texto', () => {
+test('alterna el aviso público y separa links pegados al texto', async () => {
   const seen = new Set();
   for (let i = 0; i < 40; i++) seen.add(privateCommentNotice(`comentario-${i}`));
   assert.equal(seen.size, 3);
@@ -306,12 +337,12 @@ test('alterna el aviso público y separa links pegados al texto', () => {
   try {
     const next = structuredClone(original);
     next.intents.find((intent) => intent.id === 'shop').dm = 'Comprá en{{store}}.{{whatsapp}}';
-    setCatalog(next, { persist: false });
+    await setCatalog(next, { persist: false });
     const text = answerFor('como compro', { storeUrl: 'https://lupo.ar', whatsappNumber: '5491170590570' }).text;
     assert.match(text, /en https:\/\/lupo\.ar/);
     assert.match(text, /\. https:\/\/wa\.me\/5491170590570/);
   } finally {
-    resetCatalog({ persist: false });
+    await resetCatalog({ persist: false });
   }
 });
 
@@ -325,11 +356,11 @@ test('Graph client picks official Instagram host and bearer header', async () =>
   assert.equal(req[1].headers.Authorization, 'Bearer abc');
 });
 
-test('media-products CRUD operations', () => {
-  resetMappings({ persist: false });
+test('media-products CRUD operations', async () => {
+  await resetMappings({ persist: false });
   assert.deepEqual(getMappings(), []);
 
-  const mapping = addMapping({
+  const mapping = await addMapping({
     mediaId: '17900000000000001',
     productUrl: 'https://lupo.ar/productos/boxer',
     productName: 'Boxer Clásico'
@@ -344,26 +375,26 @@ test('media-products CRUD operations', () => {
 
   assert.equal(getProductForMedia('nonexistent'), null);
 
-  updateMapping('17900000000000001', { enabled: false }, { persist: false });
+  await updateMapping('17900000000000001', { enabled: false }, { persist: false });
   assert.equal(getProductForMedia('17900000000000001'), null);
 
-  updateMapping('17900000000000001', { enabled: true, productName: 'Boxer Premium' }, { persist: false });
+  await updateMapping('17900000000000001', { enabled: true, productName: 'Boxer Premium' }, { persist: false });
   assert.equal(getProductForMedia('17900000000000001').productName, 'Boxer Premium');
 
-  deleteMapping('17900000000000001', { persist: false });
+  await deleteMapping('17900000000000001', { persist: false });
   assert.deepEqual(getMappings(), []);
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
 
-test('media-products validation rejects invalid data', () => {
-  resetMappings({ persist: false });
+test('media-products validation rejects invalid data', async () => {
+  await resetMappings({ persist: false });
   assert.throws(() => validateStore({ mappings: [{ mediaId: 'invalid' }] }), /no es válido/);
   assert.throws(() => validateStore({ mappings: [{ mediaId: '17900000000000001', productUrl: 'not-a-url', productName: 'Test' }] }), /URL/);
   assert.throws(() => validateStore({ mappings: [{ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: '' }] }), /nombre/);
-  addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Test' }, { persist: false });
-  assert.throws(() => addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Duplicate' }, { persist: false }), /Ya existe/);
-  resetMappings({ persist: false });
+  await addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Test' }, { persist: false });
+  await assert.rejects(() => addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Duplicate' }, { persist: false }), /Ya existe/);
+  await resetMappings({ persist: false });
 });
 
 test('extractEvents includes mediaId for Instagram comments', () => {
@@ -377,8 +408,8 @@ test('extractEvents includes mediaId for Instagram comments', () => {
 
 test('IG comment with mapped product includes product link in private reply', async () => {
   resetTestState();
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000002',
     productUrl: 'https://lupo.ar/productos/slip',
     productName: 'Slip Básico'
@@ -397,13 +428,13 @@ test('IG comment with mapped product includes product link in private reply', as
   assert.match(sent[0].body.message.text, /Slip Básico/);
   assert.match(sent[0].body.message.text, /https:\/\/lupo\.ar\/productos\/slip/);
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
 
 test('IG comment with mapped product sends product link even without keyword match', async () => {
   resetTestState();
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000003',
     productUrl: 'https://lupo.ar/productos/medias',
     productName: 'Medias Deportivas'
@@ -422,13 +453,13 @@ test('IG comment with mapped product sends product link even without keyword mat
   assert.match(sent[0].body.message.text, /Medias Deportivas/);
   assert.match(sent[0].body.message.text, /https:\/\/lupo\.ar\/productos\/medias/);
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
 
 test('IG comment on a mapped post uses that post reply instead of the automatic one', async () => {
   resetTestState();
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000004',
     productUrl: 'https://lupo.ar/productos/boxer',
     productName: 'Boxer Clásico',
@@ -447,13 +478,13 @@ test('IG comment on a mapped post uses that post reply instead of the automatic 
   assert.equal(sent[0].body.message.text, '¡Hola! 💙 Este post es del Boxer Clásico. Lo ves acá: https://lupo.ar/productos/boxer');
   assert.doesNotMatch(sent[0].body.message.text, /tienda|whatsapp|cuánto/i);
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
 
 test('un comentario en un post asociado usa la respuesta pública de esa publicación', async () => {
   resetTestState();
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000005',
     productUrl: 'https://lupo.ar/productos/boxer',
     productName: 'Boxer Clásico',
@@ -482,8 +513,8 @@ test('un comentario en un post asociado usa la respuesta pública de esa publica
   assert.equal(sent.at(-1).body.message, 'Este post es el Boxer Clásico. Mirá el DM 📩');
   assert.doesNotMatch(sent.at(-2).body.message.text, /talle ideal|medidas/i);
   assert.doesNotMatch(sent.at(-1).body.message, /ayudarte con el talle/i);
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000006',
     productUrl: 'https://lupo.ar/productos/boxer',
     productName: 'Boxer Clásico',
@@ -517,5 +548,5 @@ test('un comentario en un post asociado usa la respuesta pública de esa publica
   await processEvent(other, { ...cfg, igPrivateReplies: true }, send);
   assert.equal(sent.at(-1).body.message, privateCommentNotice('comment5'));
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });

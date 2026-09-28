@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { signatureProblem, extractEvents, cleanSecret } from './meta.js';
 import { processEvent } from './bot.js';
-import { answerFor, publicCommentFor, getCatalog, setCatalog, previewFor } from './replies.js';
-import { getMappings, addMapping, updateMapping, deleteMapping } from './media-products.js';
+import { answerFor, publicCommentFor, getCatalog, setCatalog, previewFor, hydrateCatalog, defaultCatalog } from './replies.js';
+import { getMappings, addMapping, updateMapping, deleteMapping, hydrateMappings, defaultMediaStore } from './media-products.js';
 import { listInstagramMedia } from './ig-media.js';
+import { initDb, storageMode } from './db.js';
 
 const env = process.env;
 const config = {
@@ -23,7 +24,7 @@ const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.get('/health', (_, res) => res.json({ ok: true, simulation: config.dryRun }));
+app.get('/health', (_, res) => res.json({ ok: true, simulation: config.dryRun, storage: storageMode() }));
 
 app.get('/webhook', (req, res) => {
   const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
@@ -160,24 +161,24 @@ app.get('/api/replies', requireAdmin, (_req, res) => {
     }
   });
 });
-app.put('/api/replies', requireAdmin, (req, res) => {
+app.put('/api/replies', requireAdmin, async (req, res) => {
   try {
-    const catalog = setCatalog(req.body);
+    const catalog = await setCatalog(req.body);
     res.json({ ok: true, catalog });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
-app.post('/api/preview', requireAdmin, (req, res) => {
+app.post('/api/preview', requireAdmin, async (req, res) => {
   const text = String(req.body?.text ?? '').slice(0, 2000);
   const previous = getCatalog();
   try {
-    if (req.body?.catalog) setCatalog(req.body.catalog, { persist: false });
+    if (req.body?.catalog) await setCatalog(req.body.catalog, { persist: false });
     res.json(previewFor(text, replyOpts()));
   } catch (err) {
     res.status(400).json({ error: err.message });
   } finally {
-    if (req.body?.catalog) setCatalog(previous, { persist: false });
+    if (req.body?.catalog) await setCatalog(previous, { persist: false });
   }
 });
 
@@ -197,25 +198,25 @@ app.get('/api/ig-media', requireAdmin, async (req, res) => {
 app.get('/api/media-products', requireAdmin, (_req, res) => {
   res.json({ mappings: getMappings() });
 });
-app.post('/api/media-products', requireAdmin, (req, res) => {
+app.post('/api/media-products', requireAdmin, async (req, res) => {
   try {
-    const mapping = addMapping(req.body);
+    const mapping = await addMapping(req.body);
     res.status(201).json({ ok: true, mapping });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
-app.put('/api/media-products/:mediaId', requireAdmin, (req, res) => {
+app.put('/api/media-products/:mediaId', requireAdmin, async (req, res) => {
   try {
-    const mapping = updateMapping(req.params.mediaId, req.body);
+    const mapping = await updateMapping(req.params.mediaId, req.body);
     res.json({ ok: true, mapping });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
-app.delete('/api/media-products/:mediaId', requireAdmin, (req, res) => {
+app.delete('/api/media-products/:mediaId', requireAdmin, async (req, res) => {
   try {
-    const mapping = deleteMapping(req.params.mediaId);
+    const mapping = await deleteMapping(req.params.mediaId);
     res.json({ ok: true, mapping });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -239,7 +240,21 @@ app.post('/simulate', (req, res) => {
 });
 
 const port = Number(env.PORT || 3000);
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Lupo bot listening on port ${port}, DRY_RUN=${config.dryRun}`);
-  console.log(`Panel de respuestas: http://127.0.0.1:${port}/admin`);
+
+async function start() {
+  await initDb({
+    seedReplies: defaultCatalog(),
+    seedMedia: defaultMediaStore()
+  });
+  await hydrateCatalog();
+  await hydrateMappings();
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Lupo bot listening on port ${port}, DRY_RUN=${config.dryRun}, storage=${storageMode()}`);
+    console.log(`Panel de respuestas: http://127.0.0.1:${port}/admin`);
+  });
+}
+
+start().catch((err) => {
+  console.error('[BOOT] No se pudo iniciar:', err);
+  process.exit(1);
 });
