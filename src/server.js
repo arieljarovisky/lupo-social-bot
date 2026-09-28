@@ -18,7 +18,9 @@ const config = {
   igPrivateReplies: env.IG_PRIVATE_REPLIES === 'true', dryRun: env.DRY_RUN !== 'false',
   storeUrl: env.STORE_URL || 'https://lupo.ar', whatsappNumber: env.WHATSAPP_NUMBER || '',
   // Hours without another auto-DM to the same person. 0 = off. Default 24.
-  dmCooldownHours: env.DM_COOLDOWN_HOURS ?? '24'
+  dmCooldownHours: env.DM_COOLDOWN_HOURS ?? '24',
+  // Hours after a human reply during which the bot stays silent. 0 = off. Default 2.
+  humanActiveWindowHours: env.HUMAN_ACTIVE_WINDOW_HOURS ?? '2'
 };
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const app = express();
