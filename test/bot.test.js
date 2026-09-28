@@ -283,6 +283,22 @@ test('rechaza un catálogo sin intención unknown o con regex rota', async () =>
   await assert.rejects(() => setCatalog(next, { persist: false }));
 });
 
+test('una intención pausada no responde y cae en unknown o la siguiente', async () => {
+  const original = getCatalog();
+  try {
+    const next = structuredClone(original);
+    const promo = next.intents.find((intent) => intent.id === 'promo_quiero');
+    promo.enabled = false;
+    await setCatalog(next, { persist: false });
+    assert.equal(answerFor('quiero').intent, 'unknown');
+    assert.equal(publicCommentFor('quiero'), null);
+    assert.equal(privateReplyFor('quiero'), null);
+  } finally {
+    await resetCatalog({ persist: false });
+  }
+  assert.equal(answerFor('quiero').intent, 'promo_quiero');
+});
+
 test('clasifica las consultas de Instagram en la intención pedida', () => {
   const cases = [
     ['quiero', 'promo_quiero', false],

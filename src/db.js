@@ -99,11 +99,13 @@ async function createSchema() {
       label VARCHAR(60) NOT NULL,
       description VARCHAR(180) NOT NULL DEFAULT '',
       handoff TINYINT(1) NOT NULL DEFAULT 0,
+      enabled TINYINT(1) NOT NULL DEFAULT 1,
       dm TEXT NOT NULL,
       comment_text VARCHAR(400) NOT NULL DEFAULT '',
       sort_order INT NOT NULL DEFAULT 0
     )
   `);
+  await ensureColumn('intents', 'enabled', 'TINYINT(1) NOT NULL DEFAULT 1');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS intent_keywords (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -136,6 +138,17 @@ async function createSchema() {
         FOREIGN KEY (media_id) REFERENCES media_products(media_id) ON DELETE CASCADE
     )
   `);
+}
+
+async function ensureColumn(table, column, definition) {
+  const [rows] = await pool.query(
+    `SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column]
+  );
+  if (rows.length) return;
+  await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+  console.log(`[DB] Columna ${table}.${column} agregada`);
 }
 
 /** One-shot: copy old bot_settings JSON into relational tables if present. */
@@ -182,7 +195,7 @@ async function hasMediaProducts() {
 export async function loadCatalog() {
   if (!pool) return null;
   const [intentRows] = await pool.query(
-    `SELECT id, label, description, handoff, dm, comment_text AS comment, sort_order
+    `SELECT id, label, description, handoff, enabled, dm, comment_text AS comment, sort_order
      FROM intents ORDER BY sort_order ASC, id ASC`
   );
   if (!intentRows.length) return null;
@@ -218,6 +231,7 @@ export async function loadCatalog() {
       label: row.label,
       description: row.description || '',
       handoff: Boolean(row.handoff),
+      enabled: row.enabled !== 0 && row.enabled !== false,
       keywords: keywordsByIntent.get(row.id) || [],
       dm: row.dm || '',
       comment: row.comment || ''
@@ -257,13 +271,14 @@ export async function saveCatalog(catalog) {
     for (let i = 0; i < catalog.intents.length; i++) {
       const intent = catalog.intents[i];
       await conn.query(
-        `INSERT INTO intents (id, label, description, handoff, dm, comment_text, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO intents (id, label, description, handoff, enabled, dm, comment_text, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           intent.id,
           intent.label,
           intent.description || '',
           intent.handoff ? 1 : 0,
+          intent.enabled === false ? 0 : 1,
           intent.dm || '',
           intent.comment || '',
           i

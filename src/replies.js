@@ -96,6 +96,7 @@ export function validateCatalog(input) {
       label: cleanText(raw.label || id, 60) || id,
       description: cleanText(raw.description || '', 180),
       handoff: Boolean(raw.handoff),
+      enabled: id === 'unknown' ? true : raw.enabled !== false,
       keywords: cleanedKeywords,
       dm: cleanText(raw.dm, MAX_DM),
       comment: cleanText(raw.comment, MAX_COMMENT)
@@ -176,6 +177,7 @@ export function classify(message, opts = {}) {
   const text = normalize(message);
   for (const intent of catalog.intents) {
     if (intent.id === 'unknown') continue;
+    if (intent.enabled === false) continue;
     if (matches(text, compileKeywords(intent.keywords))) {
       return {
         intent: intent.id,
