@@ -71,11 +71,6 @@ function renderMappingReply(template, product, opts) {
     .replaceAll('{{url}}', product.productUrl);
 }
 
-function withoutOpeningGreeting(text) {
-  const continued = String(text ?? '').replace(/^\s*¡?\s*hola\s*!?\s*(?:💙\s*)?/i, '').trim();
-  return continued || String(text ?? '');
-}
-
 function isSelf(event, config) {
   const ours = event.platform === 'instagram' ? idList(config.igUserId) : idList(config.fbPageId);
   if (event.senderId && ours.includes(String(event.senderId))) return true;
@@ -141,13 +136,12 @@ export async function processEvent(event, config, send = graphPost) {
       if (coolMs > 0) dmCooldown.set(customerKey, Date.now() + coolMs);
       return { action: event.storyReply ? 'story_reply' : 'thread_reply' };
     }
-    // After the chat is open, stay quiet unless the message matches a known reply.
-    if (coolMs > 0 && dmCooldown.has(customerKey) && result.intent === 'unknown') {
+    // Once the chat is open, stay quiet. The human continues the thread alone.
+    if (coolMs > 0 && dmCooldown.has(customerKey)) {
       recent.set(key, Date.now() + DEDUP_MS);
       return { action: 'dm_cooldown' };
     }
-    const alreadyChatting = coolMs > 0 && dmCooldown.has(customerKey);
-    const text = alreadyChatting ? withoutOpeningGreeting(result.text) : result.text;
+    const text = result.text;
     markBotOutbound(event.platform, [accountId, ...expectedIds], event.senderId);
     noteBotMid(await send({ ...common, body: {
       recipient: { id: event.senderId },

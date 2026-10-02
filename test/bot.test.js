@@ -115,22 +115,25 @@ test('DM usa endpoint y evita duplicados; reclamos pausan respuestas del mismo c
   assert.equal((await processEvent(event, cfg, send)).action, 'dm_price');
   assert.equal((await processEvent(event, cfg, send)).action, 'duplicate');
   assert.equal(sent[0].body.recipient.id, 'c1');
-  await processEvent({ ...event, id: 'm11', text: 'reclamo' }, cfg, send);
-  assert.equal((await processEvent({ ...event, id: 'm12' }, cfg, send)).action, 'human_paused');
+  assert.equal((await processEvent({ ...event, id: 'm11', text: 'reclamo' }, cfg, send)).action, 'dm_cooldown');
+  assert.equal(sent.length, 1);
+  const claim = { ...event, id: 'm20', senderId: 'c2', text: 'reclamo' };
+  assert.equal((await processEvent(claim, cfg, send)).action, 'dm_claim');
+  assert.equal((await processEvent({ ...claim, id: 'm21', text: 'precio?' }, cfg, send)).action, 'human_paused');
   assert.equal(sent.length, 2);
 });
 
-test('DM cooldown evita otra auto-respuesta al mismo cliente; handoff sí pasa', async () => {
+test('DM cooldown evita otra auto-respuesta al mismo cliente, incluso si pide un asesor', async () => {
   resetTestState(); const sent = [];
   const send = async (req) => { sent.push(req); return { id: 'ok' }; };
   const base = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c3' };
   assert.equal((await processEvent({ ...base, id: 'c1', text: 'hola' }, cfg, send)).action, 'dm_unknown');
   assert.equal((await processEvent({ ...base, id: 'c2', text: 'cómo estás?' }, cfg, send)).action, 'dm_cooldown');
-  assert.equal((await processEvent({ ...base, id: 'c3', text: 'quiero hablar con un asesor' }, cfg, send)).action, 'dm_handoff');
-  assert.equal(sent.length, 2);
+  assert.equal((await processEvent({ ...base, id: 'c3', text: 'quiero hablar con un asesor' }, cfg, send)).action, 'dm_cooldown');
+  assert.equal(sent.length, 1);
   // Otro usuario no queda bloqueado por el cooldown del primero.
   assert.equal((await processEvent({ ...base, id: 'c4', senderId: 'c4', text: 'hola' }, cfg, send)).action, 'dm_unknown');
-  assert.equal(sent.length, 3);
+  assert.equal(sent.length, 2);
 });
 
 test('compartir una historia abre el chat y no saluda cuando responden', async () => {
@@ -160,8 +163,8 @@ test('el eco de una respuesta del bot no le saca el chat al cliente', async () =
     { sender: { id: 'ig123' }, recipient: { id: 'c9' }, timestamp: now, message: { mid: 'bot-mid-1', is_echo: true, text: 'Hola' } }
   ] }] });
   assert.equal((await processEvent(echo[0], cfg, send)).action, 'outbound_seen');
-  assert.equal((await processEvent({ ...base, id: 'in2', text: 'precio?' }, cfg, send)).action, 'dm_price');
-  assert.equal(sent.length, 2);
+  assert.equal((await processEvent({ ...base, id: 'in2', text: 'precio?' }, cfg, send)).action, 'dm_cooldown');
+  assert.equal(sent.length, 1);
 });
 
 test('responder una historia no dispara el saludo automático', async () => {
@@ -246,9 +249,8 @@ test('un DM posterior al mensaje privado no recibe otra respuesta automática', 
   assert.equal((await processEvent(reply, cfg, send)).action, 'dm_cooldown');
   assert.equal(sent.length, 2);
   const payment = await processEvent({ ...reply, id: 'm32', text: 'cómo se puede pagar' }, cfg, send);
-  assert.equal(payment.action, 'dm_payment');
-  assert.match(sent[2].body.message.text, /^Tenés 6 cuotas sin interés/);
-  assert.doesNotMatch(sent[2].body.message.text, /hola/i);
+  assert.equal(payment.action, 'dm_cooldown');
+  assert.equal(sent.length, 2);
   assert.equal((await processEvent({ ...reply, id: 'm33', text: 'ok' }, cfg, send)).action, 'dm_cooldown');
   assert.equal((await processEvent({ ...reply, id: 'm31', senderId: 'otro', text: 'hola' }, cfg, send)).action, 'dm_unknown');
   assert.match(sent.at(-1).body.message.text, /^¡Hola!/);
