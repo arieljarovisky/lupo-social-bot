@@ -153,6 +153,43 @@ test('compartir una historia abre el chat y no saluda cuando responden', async (
   assert.equal(sent.length, 0);
 });
 
+test('human_active window silences bot after human reply in conversation', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const withActiveWindow = { ...cfg, humanActiveWindowHours: 2 };
+  const now = Date.now();
+  // A human replies manually to a customer (echo event, not from the bot).
+  const echoEvent = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', messaging: [
+    { sender: { id: 'ig123' }, recipient: { id: 'c20' }, timestamp: now, message: { mid: 'manual1', is_echo: true, text: 'Te respondo' } }
+  ] }] });
+  assert.equal((await processEvent(echoEvent[0], withActiveWindow, send)).action, 'human_outbound');
+  // Now the customer replies - the bot should stay silent due to human_active.
+  const incomingMsg = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c20', id: 'in20', text: 'ok gracias' };
+  assert.equal((await processEvent(incomingMsg, withActiveWindow, send)).action, 'human_paused');
+  assert.equal(sent.length, 0);
+  // But comments should still work normally (human_active only affects DMs).
+  const commentEvent = { platform: 'instagram', kind: 'comment', accountId: 'ig123', senderId: 'c20', id: 'cmt20', text: 'precio?' };
+  const commentResult = await processEvent(commentEvent, withActiveWindow, send);
+  assert.equal(commentResult.action, 'comment_price');
+  assert.equal(sent.length, 1);
+});
+
+test('HUMAN_ACTIVE_WINDOW_HOURS=0 disables the active window check', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const noActiveWindow = { ...cfg, humanActiveWindowHours: 0 };
+  const now = Date.now();
+  // Human replies.
+  const echoEvent = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', messaging: [
+    { sender: { id: 'ig123' }, recipient: { id: 'c21' }, timestamp: now, message: { mid: 'manual2', is_echo: true, text: 'Manual reply' } }
+  ] }] });
+  assert.equal((await processEvent(echoEvent[0], noActiveWindow, send)).action, 'human_outbound');
+  // Customer replies - but since human_active is disabled, only human_paused applies.
+  const incomingMsg = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c21', id: 'in21', text: 'hola' };
+  // human_paused still applies (24h) but human_active check is disabled.
+  assert.equal((await processEvent(incomingMsg, noActiveWindow, send)).action, 'human_paused');
+});
+
 test('el eco de una respuesta del bot no le saca el chat al cliente', async () => {
   resetTestState(); const sent = [];
   const send = async (req) => { sent.push(req); return { message_id: 'bot-mid-1' }; };

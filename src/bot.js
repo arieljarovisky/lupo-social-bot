@@ -9,10 +9,12 @@ const paused = new Map();
 const dmCooldown = new Map();
 const botMids = new Map();
 const botOutboundUntil = new Map();
+const humanActiveUntil = new Map();
 const DEDUP_MS = 48 * 3600 * 1000;
 const HANDOFF_PAUSE_MS = 24 * 3600 * 1000;
 const DEFAULT_DM_COOLDOWN_MS = 24 * 3600 * 1000;
 const BOT_ECHO_WINDOW_MS = 2 * 60 * 1000;
+const DEFAULT_HUMAN_ACTIVE_WINDOW_MS = 2 * 3600 * 1000;
 
 function cleanExpired(now = Date.now()) {
   for (const [key, until] of recent) if (until <= now) recent.delete(key);
@@ -21,6 +23,7 @@ function cleanExpired(now = Date.now()) {
   for (const [key, until] of dmCooldown) if (until <= now) dmCooldown.delete(key);
   for (const [key, until] of botMids) if (until <= now) botMids.delete(key);
   for (const [key, until] of botOutboundUntil) if (until <= now) botOutboundUntil.delete(key);
+  for (const [key, until] of humanActiveUntil) if (until <= now) humanActiveUntil.delete(key);
 }
 
 /** Hours from config; 0 disables. Default 24h when unset. */
@@ -30,6 +33,16 @@ function dmCooldownMs(config) {
   if (raw == null || raw === '') return DEFAULT_DM_COOLDOWN_MS;
   const hours = Number(raw);
   if (!Number.isFinite(hours) || hours < 0) return DEFAULT_DM_COOLDOWN_MS;
+  return hours * 3600 * 1000;
+}
+
+/** Hours from config; 0 disables. Default 2h when unset. */
+function humanActiveWindowMs(config) {
+  const raw = config?.humanActiveWindowHours;
+  if (raw === 0 || raw === '0') return 0;
+  if (raw == null || raw === '') return DEFAULT_HUMAN_ACTIVE_WINDOW_MS;
+  const hours = Number(raw);
+  if (!Number.isFinite(hours) || hours < 0) return DEFAULT_HUMAN_ACTIVE_WINDOW_MS;
   return hours * 3600 * 1000;
 }
 
@@ -105,6 +118,12 @@ export async function processEvent(event, config, send = graphPost) {
     // Sent from the Instagram app (a story share or a manual DM). This chat stays with the human.
     const until = Date.now() + HANDOFF_PAUSE_MS;
     for (const key of keys) paused.set(key, until);
+    // Also mark that a human is actively handling this conversation.
+    const activeMs = humanActiveWindowMs(config);
+    if (activeMs > 0) {
+      const activeUntil = Date.now() + activeMs;
+      for (const key of keys) humanActiveUntil.set(key, activeUntil);
+    }
     return { action: 'human_outbound' };
   }
   if (!['comment', 'message'].includes(event.kind) || !event.id || !event.text || isSelf(event, config)) {
@@ -114,6 +133,8 @@ export async function processEvent(event, config, send = graphPost) {
   if (recent.has(key) || inFlight.has(key)) return { action: 'duplicate' };
   const customerKey = `${event.platform}:${accountId}:${event.senderId}`;
   if (event.kind === 'message' && paused.has(customerKey)) return { action: 'human_paused' };
+  // If a human recently replied in this conversation, stay silent (conversation is "open").
+  if (event.kind === 'message' && humanActiveUntil.has(customerKey)) return { action: 'human_active' };
 
   // If delivery was delayed beyond the standard messaging window, avoid a proactive reply.
   const sentAt = event.timestamp && event.timestamp < 1e12 ? event.timestamp * 1000 : event.timestamp;
@@ -206,5 +227,5 @@ export async function processEvent(event, config, send = graphPost) {
 
 export function resetTestState() {
   recent.clear(); paused.clear(); inFlight.clear(); privateAttempts.clear(); dmCooldown.clear();
-  botMids.clear(); botOutboundUntil.clear();
+  botMids.clear(); botOutboundUntil.clear(); humanActiveUntil.clear();
 }
