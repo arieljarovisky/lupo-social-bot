@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { bundledFile, dataFile } from './data-dir.js';
+import { isMysqlConfigured, loadCatalog, saveCatalog } from './db.js';
 
 const BUNDLED_PATH = bundledFile('replies.json');
 const DATA_PATH = dataFile('replies.json');
@@ -99,6 +100,7 @@ export function validateCatalog(input) {
       label: cleanText(raw.label || id, 60) || id,
       description: cleanText(raw.description || '', 180),
       handoff: Boolean(raw.handoff),
+      enabled: id === 'unknown' ? true : raw.enabled !== false,
       keywords: cleanedKeywords,
       dm: cleanText(raw.dm, MAX_DM),
       comment: cleanText(raw.comment, MAX_COMMENT)
@@ -129,7 +131,7 @@ function upgradeLegacyKeywords(catalog) {
 function loadFromDisk() {
   try {
     const catalog = validateCatalog(JSON.parse(readFileSync(DATA_PATH, 'utf8')));
-    if (upgradeLegacyKeywords(catalog)) persist(catalog);
+    if (upgradeLegacyKeywords(catalog)) persistFile(catalog);
     return catalog;
   } catch (err) {
     console.error('[REPLIES] No se pudo leer data/replies.json, uso valores por defecto:', err.message);
@@ -137,28 +139,59 @@ function loadFromDisk() {
   }
 }
 
-function persist(next) {
+function persistFile(next) {
   mkdirSync(dirname(DATA_PATH), { recursive: true });
   const tmp = `${DATA_PATH}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   renameSync(tmp, DATA_PATH);
 }
 
+async function persist(next) {
+  if (isMysqlConfigured()) {
+    await saveCatalog(next);
+    return;
+  }
+  persistFile(next);
+}
+
+/** Defaults shipped with the repo (for MySQL seed). */
+export function defaultCatalog() {
+  return validateCatalog(DEFAULTS);
+}
+
+/** Reload catalog from MySQL after initDb. No-op in file mode (already loaded). */
+export async function hydrateCatalog() {
+  if (!isMysqlConfigured()) return getCatalog();
+  const stored = await loadCatalog();
+  if (stored == null) {
+    catalog = validateCatalog(DEFAULTS);
+    return getCatalog();
+  }
+  try {
+    catalog = validateCatalog(stored);
+  } catch (err) {
+    console.error('[REPLIES] Datos MySQL inválidos, uso defaults:', err.message);
+    catalog = validateCatalog(DEFAULTS);
+  }
+  if (upgradeLegacyKeywords(catalog)) await persist(catalog);
+  return getCatalog();
+}
+
 export function getCatalog() {
   return structuredClone(catalog);
 }
 
-export function setCatalog(input, { persist: shouldPersist = true } = {}) {
+export async function setCatalog(input, { persist: shouldPersist = true } = {}) {
   const next = validateCatalog(input);
   upgradeLegacyKeywords(next);
-  if (shouldPersist) persist(next);
   catalog = next;
+  if (shouldPersist) await persist(next);
   return getCatalog();
 }
 
-export function resetCatalog({ persist: shouldPersist = false } = {}) {
+export async function resetCatalog({ persist: shouldPersist = false } = {}) {
   catalog = validateCatalog(DEFAULTS);
-  if (shouldPersist) persist(catalog);
+  if (shouldPersist) await persist(catalog);
   return getCatalog();
 }
 
@@ -166,6 +199,7 @@ export function classify(message, opts = {}) {
   const text = normalize(message);
   for (const intent of catalog.intents) {
     if (intent.id === 'unknown') continue;
+    if (intent.enabled === false) continue;
     if (matches(text, compileKeywords(intent.keywords))) {
       return {
         intent: intent.id,

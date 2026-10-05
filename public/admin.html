@@ -57,6 +57,7 @@
     button:disabled { opacity: .5; cursor: not-allowed; }
     .card { border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px; background: #fff; }
     .card.unknown { background: #faf6ef; }
+    .card.paused { opacity: 0.72; border-style: dashed; }
     .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
     .chip {
@@ -261,6 +262,7 @@
           label: card.querySelector('.label').value,
           description: card.querySelector('.description').value,
           handoff: card.querySelector('.handoff').checked,
+          enabled: card.querySelector('.enabled') ? card.querySelector('.enabled').checked : true,
           keywords: JSON.parse(card.dataset.keywords || '[]'),
           dm: card.querySelector('.dm').value,
           comment: card.querySelector('.comment').value
@@ -293,11 +295,13 @@
     }
 
     function renderIntents() {
-      $('intents').innerHTML = state.catalog.intents.map((intent) => `
-        <article class="card ${intent.id === 'unknown' ? 'unknown' : ''}" data-id="${escapeAttr(intent.id)}" data-keywords="${escapeAttr(JSON.stringify(intent.keywords))}">
+      $('intents').innerHTML = state.catalog.intents.map((intent) => {
+        const paused = intent.id !== 'unknown' && intent.enabled === false;
+        return `
+        <article class="card ${intent.id === 'unknown' ? 'unknown' : ''}${paused ? ' paused' : ''}" data-id="${escapeAttr(intent.id)}" data-keywords="${escapeAttr(JSON.stringify(intent.keywords))}">
           <div class="card-head">
             <div>
-              <h3>${escapeAttr(intent.label)}</h3>
+              <h3>${escapeAttr(intent.label)}${paused ? ' <span class="pill">Pausada</span>' : ''}</h3>
               <p class="hint">${intent.id === 'unknown' ? 'Respuesta por defecto cuando no hay coincidencia.' : `Id interno: ${escapeAttr(intent.id)}`}</p>
             </div>
             <div class="row">
@@ -316,6 +320,7 @@
               <input class="description" value="${escapeAttr(intent.description || '')}">
             </div>
           </div>
+          ${intent.id === 'unknown' ? '' : `<label class="check" style="margin:12px 0"><input class="enabled" type="checkbox" ${intent.enabled !== false ? 'checked' : ''}> Respuesta activa (si la desmarcás, el bot la ignora)</label>`}
           <label class="check" style="margin:12px 0"><input class="handoff" type="checkbox" ${intent.handoff ? 'checked' : ''}> Pausar el bot 24 h y dejar el caso para un humano</label>
           <label>Palabras clave</label>
           <div class="chips"></div>
@@ -334,7 +339,8 @@
             </div>
           </div>
         </article>
-      `).join('');
+      `;
+      }).join('');
 
       document.querySelectorAll('#intents .card').forEach((card, index, cards) => {
         keywordList(card);
@@ -598,7 +604,7 @@
       }
       const unknownAt = state.catalog.intents.findIndex((intent) => intent.id === 'unknown');
       state.catalog.intents.splice(unknownAt === -1 ? state.catalog.intents.length : unknownAt, 0, {
-        id, label, description: '', handoff: false, keywords: ['consulta'], dm: '¡Hola! 💙 ', comment: '¡Hola! 💙 '
+        id, label, description: '', handoff: false, enabled: true, keywords: ['consulta'], dm: '¡Hola! 💙 ', comment: '¡Hola! 💙 '
       });
       $('newIntentLabel').value = '';
       renderIntents();

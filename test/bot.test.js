@@ -5,10 +5,41 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { dataFile } from '../src/data-dir.js';
+import { mysqlConfigFromEnv, storageMode } from '../src/db.js';
 import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, resetCatalog, previewFor, privateCommentNotice } from '../src/replies.js';
 import { verifySignature, extractEvents, graphPost, escapeUnicodeForMeta } from '../src/meta.js';
 import { processEvent, resetTestState } from '../src/bot.js';
 import { getMappings, addMapping, updateMapping, deleteMapping, getProductForMedia, resetMappings, validateStore } from '../src/media-products.js';
+
+test('storageMode es file sin MySQL y mysqlConfigFromEnv lee variables Railway', () => {
+  assert.equal(storageMode({}), 'file');
+  assert.equal(mysqlConfigFromEnv({}), null);
+  const cfg = mysqlConfigFromEnv({
+    MYSQLHOST: 'mysql.railway.internal',
+    MYSQLPORT: '3306',
+    MYSQLUSER: 'root',
+    MYSQLPASSWORD: 'secret',
+    MYSQLDATABASE: 'railway'
+  });
+  assert.deepEqual(cfg, {
+    host: 'mysql.railway.internal',
+    port: 3306,
+    user: 'root',
+    password: 'secret',
+    database: 'railway'
+  });
+  assert.equal(storageMode({
+    MYSQLHOST: 'h', MYSQLUSER: 'u', MYSQLDATABASE: 'd'
+  }), 'mysql');
+  const fromUrl = mysqlConfigFromEnv({
+    MYSQL_URL: 'mysql://user:p%40ss@host.example:3307/mydb'
+  });
+  assert.equal(fromUrl.host, 'host.example');
+  assert.equal(fromUrl.port, 3307);
+  assert.equal(fromUrl.user, 'user');
+  assert.equal(fromUrl.password, 'p@ss');
+  assert.equal(fromUrl.database, 'mydb');
+});
 
 test('DATA_DIR no pisa un archivo ya editado en el volumen', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lupo-data-'));
@@ -84,22 +115,25 @@ test('DM usa endpoint y evita duplicados; reclamos pausan respuestas del mismo c
   assert.equal((await processEvent(event, cfg, send)).action, 'dm_price');
   assert.equal((await processEvent(event, cfg, send)).action, 'duplicate');
   assert.equal(sent[0].body.recipient.id, 'c1');
-  await processEvent({ ...event, id: 'm11', text: 'reclamo' }, cfg, send);
-  assert.equal((await processEvent({ ...event, id: 'm12' }, cfg, send)).action, 'human_paused');
+  assert.equal((await processEvent({ ...event, id: 'm11', text: 'reclamo' }, cfg, send)).action, 'dm_cooldown');
+  assert.equal(sent.length, 1);
+  const claim = { ...event, id: 'm20', senderId: 'c2', text: 'reclamo' };
+  assert.equal((await processEvent(claim, cfg, send)).action, 'dm_claim');
+  assert.equal((await processEvent({ ...claim, id: 'm21', text: 'precio?' }, cfg, send)).action, 'human_paused');
   assert.equal(sent.length, 2);
 });
 
-test('DM cooldown evita otra auto-respuesta al mismo cliente; handoff sí pasa', async () => {
+test('DM cooldown evita otra auto-respuesta al mismo cliente, incluso si pide un asesor', async () => {
   resetTestState(); const sent = [];
   const send = async (req) => { sent.push(req); return { id: 'ok' }; };
   const base = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c3' };
   assert.equal((await processEvent({ ...base, id: 'c1', text: 'hola' }, cfg, send)).action, 'dm_unknown');
   assert.equal((await processEvent({ ...base, id: 'c2', text: 'cómo estás?' }, cfg, send)).action, 'dm_cooldown');
-  assert.equal((await processEvent({ ...base, id: 'c3', text: 'quiero hablar con un asesor' }, cfg, send)).action, 'dm_handoff');
-  assert.equal(sent.length, 2);
+  assert.equal((await processEvent({ ...base, id: 'c3', text: 'quiero hablar con un asesor' }, cfg, send)).action, 'dm_cooldown');
+  assert.equal(sent.length, 1);
   // Otro usuario no queda bloqueado por el cooldown del primero.
   assert.equal((await processEvent({ ...base, id: 'c4', senderId: 'c4', text: 'hola' }, cfg, send)).action, 'dm_unknown');
-  assert.equal(sent.length, 3);
+  assert.equal(sent.length, 2);
 });
 
 test('compartir una historia abre el chat y no saluda cuando responden', async () => {
@@ -119,6 +153,43 @@ test('compartir una historia abre el chat y no saluda cuando responden', async (
   assert.equal(sent.length, 0);
 });
 
+test('human_active window silences bot after human reply in conversation', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const withActiveWindow = { ...cfg, humanActiveWindowHours: 2 };
+  const now = Date.now();
+  // A human replies manually to a customer (echo event, not from the bot).
+  const echoEvent = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', messaging: [
+    { sender: { id: 'ig123' }, recipient: { id: 'c20' }, timestamp: now, message: { mid: 'manual1', is_echo: true, text: 'Te respondo' } }
+  ] }] });
+  assert.equal((await processEvent(echoEvent[0], withActiveWindow, send)).action, 'human_outbound');
+  // Now the customer replies - the bot should stay silent due to human_active.
+  const incomingMsg = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c20', id: 'in20', text: 'ok gracias' };
+  assert.equal((await processEvent(incomingMsg, withActiveWindow, send)).action, 'human_paused');
+  assert.equal(sent.length, 0);
+  // But comments should still work normally (human_active only affects DMs).
+  const commentEvent = { platform: 'instagram', kind: 'comment', accountId: 'ig123', senderId: 'c20', id: 'cmt20', text: 'precio?' };
+  const commentResult = await processEvent(commentEvent, withActiveWindow, send);
+  assert.equal(commentResult.action, 'comment_price');
+  assert.equal(sent.length, 1);
+});
+
+test('HUMAN_ACTIVE_WINDOW_HOURS=0 disables the active window check', async () => {
+  resetTestState(); const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const noActiveWindow = { ...cfg, humanActiveWindowHours: 0 };
+  const now = Date.now();
+  // Human replies.
+  const echoEvent = extractEvents({ object: 'instagram', entry: [{ id: 'ig123', messaging: [
+    { sender: { id: 'ig123' }, recipient: { id: 'c21' }, timestamp: now, message: { mid: 'manual2', is_echo: true, text: 'Manual reply' } }
+  ] }] });
+  assert.equal((await processEvent(echoEvent[0], noActiveWindow, send)).action, 'human_outbound');
+  // Customer replies - but since human_active is disabled, only human_paused applies.
+  const incomingMsg = { platform: 'instagram', kind: 'message', accountId: 'ig123', senderId: 'c21', id: 'in21', text: 'hola' };
+  // human_paused still applies (24h) but human_active check is disabled.
+  assert.equal((await processEvent(incomingMsg, noActiveWindow, send)).action, 'human_paused');
+});
+
 test('el eco de una respuesta del bot no le saca el chat al cliente', async () => {
   resetTestState(); const sent = [];
   const send = async (req) => { sent.push(req); return { message_id: 'bot-mid-1' }; };
@@ -129,8 +200,8 @@ test('el eco de una respuesta del bot no le saca el chat al cliente', async () =
     { sender: { id: 'ig123' }, recipient: { id: 'c9' }, timestamp: now, message: { mid: 'bot-mid-1', is_echo: true, text: 'Hola' } }
   ] }] });
   assert.equal((await processEvent(echo[0], cfg, send)).action, 'outbound_seen');
-  assert.equal((await processEvent({ ...base, id: 'in2', text: 'precio?' }, cfg, send)).action, 'dm_price');
-  assert.equal(sent.length, 2);
+  assert.equal((await processEvent({ ...base, id: 'in2', text: 'precio?' }, cfg, send)).action, 'dm_cooldown');
+  assert.equal(sent.length, 1);
 });
 
 test('responder una historia no dispara el saludo automático', async () => {
@@ -216,9 +287,8 @@ test('un DM posterior al mensaje privado no recibe otra respuesta automática', 
   assert.equal((await processEvent(reply, cfg, send)).action, 'dm_cooldown');
   assert.equal(sent.length, 2);
   const payment = await processEvent({ ...reply, id: 'm32', text: 'cómo se puede pagar' }, cfg, send);
-  assert.equal(payment.action, 'dm_payment');
-  assert.match(sent[2].body.message.text, /^Tenés 6 cuotas sin interés/);
-  assert.doesNotMatch(sent[2].body.message.text, /hola/i);
+  assert.equal(payment.action, 'dm_cooldown');
+  assert.equal(sent.length, 2);
   assert.equal((await processEvent({ ...reply, id: 'm33', text: 'ok' }, cfg, send)).action, 'dm_cooldown');
   assert.equal((await processEvent({ ...reply, id: 'm31', senderId: 'otro', text: 'hola' }, cfg, send)).action, 'dm_unknown');
   assert.match(sent.at(-1).body.message.text, /^¡Hola!/);
@@ -230,42 +300,58 @@ test('Graph client dry run does not make network calls', async () => {
   assert.equal(result.dryRun, true);
 });
 
-test('el catálogo editable cambia comentarios y se puede restaurar', () => {
+test('el catálogo editable cambia comentarios y se puede restaurar', async () => {
   const original = getCatalog();
   try {
     const next = structuredClone(original);
     const price = next.intents.find((intent) => intent.id === 'price');
     price.comment = 'Comentario de prueba para precio.';
-    setCatalog(next, { persist: false });
+    await setCatalog(next, { persist: false });
     assert.equal(publicCommentFor('¿precio?'), 'Comentario de prueba para precio.');
     assert.match(previewFor('precio').privateReply, /¿Te ayudo con algo más\?/);
     assert.equal(privateReplyFor('Qué lindo'), null);
   } finally {
-    resetCatalog({ persist: false });
+    await resetCatalog({ persist: false });
   }
   assert.equal(publicCommentFor('¿precio?'), original.intents.find((intent) => intent.id === 'price').comment);
 });
 
-test('una regla vieja de precio no responde a preciosa', () => {
+test('una regla vieja de precio no responde a preciosa', async () => {
   const next = getCatalog();
   const price = next.intents.find((intent) => intent.id === 'price');
   price.keywords = ['prec(io|ios)', 'qu[eé] precio'];
-  setCatalog(next, { persist: false });
+  await setCatalog(next, { persist: false });
   try {
     assert.equal(answerFor('Ufffff que preciosa').intent, 'unknown');
     assert.equal(answerFor('qué preciosa').intent, 'unknown');
     assert.equal(answerFor('precio').intent, 'price');
     assert.equal(answerFor('qué precio').intent, 'price');
   } finally {
-    resetCatalog({ persist: false });
+    await resetCatalog({ persist: false });
   }
 });
 
-test('rechaza un catálogo sin intención unknown o con regex rota', () => {
-  assert.throws(() => setCatalog({ intents: [{ id: 'price', keywords: ['precio'], dm: 'x', comment: 'y' }] }, { persist: false }));
+test('rechaza un catálogo sin intención unknown o con regex rota', async () => {
+  await assert.rejects(() => setCatalog({ intents: [{ id: 'price', keywords: ['precio'], dm: 'x', comment: 'y' }] }, { persist: false }));
   const next = getCatalog();
   next.intents.find((intent) => intent.id === 'price').keywords = ['('];
-  assert.throws(() => setCatalog(next, { persist: false }));
+  await assert.rejects(() => setCatalog(next, { persist: false }));
+});
+
+test('una intención pausada no responde y cae en unknown o la siguiente', async () => {
+  const original = getCatalog();
+  try {
+    const next = structuredClone(original);
+    const promo = next.intents.find((intent) => intent.id === 'promo_quiero');
+    promo.enabled = false;
+    await setCatalog(next, { persist: false });
+    assert.equal(answerFor('quiero').intent, 'unknown');
+    assert.equal(publicCommentFor('quiero'), null);
+    assert.equal(privateReplyFor('quiero'), null);
+  } finally {
+    await resetCatalog({ persist: false });
+  }
+  assert.equal(answerFor('quiero').intent, 'promo_quiero');
 });
 
 test('clasifica las consultas de Instagram en la intención pedida', () => {
@@ -319,7 +405,7 @@ test('clasifica las consultas de Instagram en la intención pedida', () => {
   assert.doesNotMatch(publicCommentFor('cuotas') || '', /https?:/);
 });
 
-test('alterna el aviso público y separa links pegados al texto', () => {
+test('alterna el aviso público y separa links pegados al texto', async () => {
   const seen = new Set();
   for (let i = 0; i < 40; i++) seen.add(privateCommentNotice(`comentario-${i}`));
   assert.equal(seen.size, 3);
@@ -328,12 +414,12 @@ test('alterna el aviso público y separa links pegados al texto', () => {
   try {
     const next = structuredClone(original);
     next.intents.find((intent) => intent.id === 'shop').dm = 'Comprá en{{store}}.{{whatsapp}}';
-    setCatalog(next, { persist: false });
+    await setCatalog(next, { persist: false });
     const text = answerFor('como compro', { storeUrl: 'https://lupo.ar', whatsappNumber: '5491170590570' }).text;
     assert.match(text, /en https:\/\/lupo\.ar/);
     assert.match(text, /\. https:\/\/wa\.me\/5491170590570/);
   } finally {
-    resetCatalog({ persist: false });
+    await resetCatalog({ persist: false });
   }
 });
 
@@ -347,11 +433,11 @@ test('Graph client picks official Instagram host and bearer header', async () =>
   assert.equal(req[1].headers.Authorization, 'Bearer abc');
 });
 
-test('media-products CRUD operations', () => {
-  resetMappings({ persist: false });
+test('media-products CRUD operations', async () => {
+  await resetMappings({ persist: false });
   assert.deepEqual(getMappings(), []);
 
-  const mapping = addMapping({
+  const mapping = await addMapping({
     mediaId: '17900000000000001',
     productUrl: 'https://lupo.ar/productos/boxer',
     productName: 'Boxer Clásico'
@@ -366,26 +452,26 @@ test('media-products CRUD operations', () => {
 
   assert.equal(getProductForMedia('nonexistent'), null);
 
-  updateMapping('17900000000000001', { enabled: false }, { persist: false });
+  await updateMapping('17900000000000001', { enabled: false }, { persist: false });
   assert.equal(getProductForMedia('17900000000000001'), null);
 
-  updateMapping('17900000000000001', { enabled: true, productName: 'Boxer Premium' }, { persist: false });
+  await updateMapping('17900000000000001', { enabled: true, productName: 'Boxer Premium' }, { persist: false });
   assert.equal(getProductForMedia('17900000000000001').productName, 'Boxer Premium');
 
-  deleteMapping('17900000000000001', { persist: false });
+  await deleteMapping('17900000000000001', { persist: false });
   assert.deepEqual(getMappings(), []);
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
 
-test('media-products validation rejects invalid data', () => {
-  resetMappings({ persist: false });
+test('media-products validation rejects invalid data', async () => {
+  await resetMappings({ persist: false });
   assert.throws(() => validateStore({ mappings: [{ mediaId: 'invalid' }] }), /no es válido/);
   assert.throws(() => validateStore({ mappings: [{ mediaId: '17900000000000001', productUrl: 'not-a-url', productName: 'Test' }] }), /URL/);
   assert.throws(() => validateStore({ mappings: [{ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: '' }] }), /nombre/);
-  addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Test' }, { persist: false });
-  assert.throws(() => addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Duplicate' }, { persist: false }), /Ya existe/);
-  resetMappings({ persist: false });
+  await addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Test' }, { persist: false });
+  await assert.rejects(() => addMapping({ mediaId: '17900000000000001', productUrl: 'https://lupo.ar', productName: 'Duplicate' }, { persist: false }), /Ya existe/);
+  await resetMappings({ persist: false });
 });
 
 test('extractEvents includes mediaId for Instagram comments', () => {
@@ -399,8 +485,8 @@ test('extractEvents includes mediaId for Instagram comments', () => {
 
 test('IG comment with mapped product includes product link in private reply', async () => {
   resetTestState();
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000002',
     productUrl: 'https://lupo.ar/productos/slip',
     productName: 'Slip Básico'
@@ -419,13 +505,13 @@ test('IG comment with mapped product includes product link in private reply', as
   assert.match(sent[0].body.message.text, /Slip Básico/);
   assert.match(sent[0].body.message.text, /https:\/\/lupo\.ar\/productos\/slip/);
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
 
 test('IG comment with mapped product sends product link even without keyword match', async () => {
   resetTestState();
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000003',
     productUrl: 'https://lupo.ar/productos/medias',
     productName: 'Medias Deportivas'
@@ -444,13 +530,13 @@ test('IG comment with mapped product sends product link even without keyword mat
   assert.match(sent[0].body.message.text, /Medias Deportivas/);
   assert.match(sent[0].body.message.text, /https:\/\/lupo\.ar\/productos\/medias/);
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
 
 test('IG comment on a mapped post uses that post reply instead of the automatic one', async () => {
   resetTestState();
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000004',
     productUrl: 'https://lupo.ar/productos/boxer',
     productName: 'Boxer Clásico',
@@ -469,13 +555,13 @@ test('IG comment on a mapped post uses that post reply instead of the automatic 
   assert.equal(sent[0].body.message.text, '¡Hola! 💙 Este post es del Boxer Clásico. Lo ves acá: https://lupo.ar/productos/boxer');
   assert.doesNotMatch(sent[0].body.message.text, /tienda|whatsapp|cuánto/i);
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
 
 test('un comentario en un post asociado usa la respuesta pública de esa publicación', async () => {
   resetTestState();
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000005',
     productUrl: 'https://lupo.ar/productos/boxer',
     productName: 'Boxer Clásico',
@@ -504,8 +590,8 @@ test('un comentario en un post asociado usa la respuesta pública de esa publica
   assert.equal(sent.at(-1).body.message, 'Este post es el Boxer Clásico. Mirá el DM 📩');
   assert.doesNotMatch(sent.at(-2).body.message.text, /talle ideal|medidas/i);
   assert.doesNotMatch(sent.at(-1).body.message, /ayudarte con el talle/i);
-  resetMappings({ persist: false });
-  addMapping({
+  await resetMappings({ persist: false });
+  await addMapping({
     mediaId: '17900000000000006',
     productUrl: 'https://lupo.ar/productos/boxer',
     productName: 'Boxer Clásico',
@@ -539,5 +625,5 @@ test('un comentario en un post asociado usa la respuesta pública de esa publica
   await processEvent(other, { ...cfg, igPrivateReplies: true }, send);
   assert.equal(sent.at(-1).body.message, privateCommentNotice('comment5'));
 
-  resetMappings({ persist: false });
+  await resetMappings({ persist: false });
 });
