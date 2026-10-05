@@ -18,6 +18,10 @@ const DEFAULT_NOTICES = [
 const DEFAULT_SUFFIX = '¿Te ayudo con algo más? Respondé este mensaje y seguimos 💙';
 
 const DEFAULTS = JSON.parse(readFileSync(BUNDLED_PATH, 'utf8'));
+const LEGACY_PRICE_KEYWORDS = new Map([
+  ['prec(io|ios)', '\\bprecios?\\b'],
+  ['qu[eé] precio', 'qu[eé] precios?\\b']
+]);
 
 let catalog = loadFromDisk();
 
@@ -108,9 +112,25 @@ export function validateCatalog(input) {
   };
 }
 
+/** «preciosa» contiene «precio». La regla vieja respondía ese halago como si pidieran el precio. */
+function upgradeLegacyKeywords(catalog) {
+  let changed = false;
+  for (const intent of catalog.intents) {
+    intent.keywords = intent.keywords.map((keyword) => {
+      const next = LEGACY_PRICE_KEYWORDS.get(keyword);
+      if (!next) return keyword;
+      changed = true;
+      return next;
+    });
+  }
+  return changed;
+}
+
 function loadFromDisk() {
   try {
-    return validateCatalog(JSON.parse(readFileSync(DATA_PATH, 'utf8')));
+    const catalog = validateCatalog(JSON.parse(readFileSync(DATA_PATH, 'utf8')));
+    if (upgradeLegacyKeywords(catalog)) persist(catalog);
+    return catalog;
   } catch (err) {
     console.error('[REPLIES] No se pudo leer data/replies.json, uso valores por defecto:', err.message);
     return validateCatalog(DEFAULTS);
@@ -130,6 +150,7 @@ export function getCatalog() {
 
 export function setCatalog(input, { persist: shouldPersist = true } = {}) {
   const next = validateCatalog(input);
+  upgradeLegacyKeywords(next);
   if (shouldPersist) persist(next);
   catalog = next;
   return getCatalog();

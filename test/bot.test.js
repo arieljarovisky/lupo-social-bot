@@ -193,6 +193,7 @@ test('comentarios usan rutas distintas y no responden cuando no hay keyword', as
   assert.equal(sent[0].path, 'i7/replies');
   assert.equal(sent[1].path, 'f7/comments');
   assert.equal((await processEvent({ ...ig, id: 'i8', text: 'Qué lindo' }, cfg, send)).action, 'comment_without_keyword');
+  assert.equal((await processEvent({ ...ig, id: 'i8b', text: 'Ufffff que preciosa' }, cfg, send)).action, 'comment_without_keyword');
 });
 
 test('IG private reply sends once, followed by public reply only if enabled', async () => {
@@ -245,6 +246,21 @@ test('el catálogo editable cambia comentarios y se puede restaurar', () => {
   assert.equal(publicCommentFor('¿precio?'), original.intents.find((intent) => intent.id === 'price').comment);
 });
 
+test('una regla vieja de precio no responde a preciosa', () => {
+  const next = getCatalog();
+  const price = next.intents.find((intent) => intent.id === 'price');
+  price.keywords = ['prec(io|ios)', 'qu[eé] precio'];
+  setCatalog(next, { persist: false });
+  try {
+    assert.equal(answerFor('Ufffff que preciosa').intent, 'unknown');
+    assert.equal(answerFor('qué preciosa').intent, 'unknown');
+    assert.equal(answerFor('precio').intent, 'price');
+    assert.equal(answerFor('qué precio').intent, 'price');
+  } finally {
+    resetCatalog({ persist: false });
+  }
+});
+
 test('rechaza un catálogo sin intención unknown o con regex rota', () => {
   assert.throws(() => setCatalog({ intents: [{ id: 'price', keywords: ['precio'], dm: 'x', comment: 'y' }] }, { persist: false }));
   const next = getCatalog();
@@ -261,6 +277,11 @@ test('clasifica las consultas de Instagram en la intención pedida', () => {
     ['¿tenés envío a Córdoba?', 'shipping', false],
     ['¿envían al interior?', 'shipping', false],
     ['precio?', 'price', false],
+    ['qué precio', 'price', false],
+    ['los precios', 'price', false],
+    ['Ufffff que preciosa', 'unknown', false],
+    ['qué preciosa', 'unknown', false],
+    ['precioso', 'unknown', false],
     ['info', 'price', false],
     ['¿cuánto sale el boxer negro?', 'price', false],
     ['¿hay en L?', 'stock', false],
@@ -278,6 +299,7 @@ test('clasifica las consultas de Instagram en la intención pedida', () => {
     assert.equal(result.handoff, handoff, text);
   }
   assert.equal(publicCommentFor('😍'), null);
+  assert.equal(publicCommentFor('Ufffff que preciosa'), null);
   assert.equal(publicCommentFor('quiero'), '¡Listo! 💙 Revisá tus mensajes 📩');
   assert.equal(answerFor('quiero comprar').intent, 'shop');
   assert.equal(answerFor('lo quiero').intent, 'promo_quiero');

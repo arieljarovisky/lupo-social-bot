@@ -170,7 +170,7 @@
       "description": "Cuánto sale, valor o un importe.",
       "handoff": false,
       "keywords": [
-        "prec(io|ios)",
+        "\\bprecios?\\b",
         "cu[aá]nto (sale|cuesta|est[aá])",
         "valor",
         "\\$[0-9]",
@@ -178,7 +178,7 @@
         "^info$",
         "info\\?",
         "💰",
-        "qu[eé] precio"
+        "qu[eé] precios?\\b"
       ],
       "dm": "¡Hola! 💙 Pasanos el nombre del producto o una captura y te confirmamos el precio al toque. También podés ver todos los precios en {{store}} 🛍️",
       "comment": "¡Hola! 💙 Te mandamos el precio por privado 📩"
