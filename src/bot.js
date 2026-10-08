@@ -1,6 +1,7 @@
 import { answerFor, classify, publicCommentFor, privateReplyFor, privateCommentNotice } from './replies.js';
 import { graphPost } from './meta.js';
 import { getProductForMedia } from './media-products.js';
+import { isMediaIgnored } from './ignored-media.js';
 
 const recent = new Map();
 const inFlight = new Set();
@@ -131,6 +132,10 @@ export async function processEvent(event, config, send = graphPost) {
   }
   const key = `${event.platform}:${event.kind}:${accountId}:${event.id}`;
   if (recent.has(key) || inFlight.has(key)) return { action: 'duplicate' };
+  if (event.kind === 'comment' && event.mediaId && isMediaIgnored(event.mediaId)) {
+    recent.set(key, Date.now() + DEDUP_MS);
+    return { action: 'ignored_media' };
+  }
   const customerKey = `${event.platform}:${accountId}:${event.senderId}`;
   if (event.kind === 'message' && paused.has(customerKey)) return { action: 'human_paused' };
   // If a human recently replied in this conversation, stay silent (conversation is "open").

@@ -7,3 +7,4 @@ node_modules/
 # Base en uso. Un push no debe subirla ni pisarla.
 data/replies.json
 data/media-products.json
+data/ignored-media.json

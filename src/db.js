@@ -138,6 +138,12 @@ async function createSchema() {
         FOREIGN KEY (media_id) REFERENCES media_products(media_id) ON DELETE CASCADE
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ignored_media (
+      media_id VARCHAR(25) NOT NULL PRIMARY KEY,
+      note VARCHAR(160) NOT NULL DEFAULT ''
+    )
+  `);
 }
 
 async function ensureColumn(table, column, definition) {
@@ -410,6 +416,51 @@ export async function updateMediaMapping(mediaId, mapping) {
 export async function deleteMediaMapping(mediaId) {
   if (!pool) throw new Error('MySQL no inicializado');
   await pool.query('DELETE FROM media_products WHERE media_id = ?', [mediaId]);
+}
+
+export async function loadIgnoredMedia() {
+  if (!pool) return null;
+  const [rows] = await pool.query(
+    `SELECT media_id AS mediaId, note FROM ignored_media ORDER BY media_id ASC`
+  );
+  return rows.map((row) => {
+    const note = String(row.note || '').trim();
+    return note ? { mediaId: row.mediaId, note } : { mediaId: row.mediaId };
+  });
+}
+
+export async function saveIgnoredMedia(mediaIds) {
+  if (!pool) throw new Error('MySQL no inicializado');
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('DELETE FROM ignored_media');
+    for (const item of mediaIds) {
+      await conn.query(
+        `INSERT INTO ignored_media (media_id, note) VALUES (?, ?)`,
+        [item.mediaId, item.note || '']
+      );
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+export async function insertIgnoredMedia(item) {
+  if (!pool) throw new Error('MySQL no inicializado');
+  await pool.query(
+    `INSERT INTO ignored_media (media_id, note) VALUES (?, ?)`,
+    [item.mediaId, item.note || '']
+  );
+}
+
+export async function deleteIgnoredMedia(mediaId) {
+  if (!pool) throw new Error('MySQL no inicializado');
+  await pool.query('DELETE FROM ignored_media WHERE media_id = ?', [mediaId]);
 }
 
 export async function closeDb() {
