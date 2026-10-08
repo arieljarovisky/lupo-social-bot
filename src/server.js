@@ -6,6 +6,7 @@ import { signatureProblem, extractEvents, cleanSecret } from './meta.js';
 import { processEvent } from './bot.js';
 import { answerFor, publicCommentFor, getCatalog, setCatalog, previewFor, hydrateCatalog, defaultCatalog } from './replies.js';
 import { getMappings, addMapping, updateMapping, deleteMapping, hydrateMappings, defaultMediaStore } from './media-products.js';
+import { getIgnoredMedia, ignoreMedia, unignoreMedia, hydrateIgnoredMedia } from './ignored-media.js';
 import { listInstagramMedia } from './ig-media.js';
 import { initDb, storageMode } from './db.js';
 
@@ -225,6 +226,26 @@ app.delete('/api/media-products/:mediaId', requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/ignored-media', requireAdmin, (_req, res) => {
+  res.json({ mediaIds: getIgnoredMedia() });
+});
+app.post('/api/ignored-media', requireAdmin, async (req, res) => {
+  try {
+    const entry = await ignoreMedia(req.body);
+    res.status(201).json({ ok: true, entry });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+app.delete('/api/ignored-media/:mediaId', requireAdmin, async (req, res) => {
+  try {
+    const entry = await unignoreMedia(req.params.mediaId);
+    res.json({ ok: true, entry });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get('/admin', (_req, res) => res.sendFile(join(publicDir, 'admin.html')));
 app.get('/privacy', (_req, res) => res.sendFile(join(publicDir, 'privacy.html')));
 app.get('/terms', (_req, res) => res.sendFile(join(publicDir, 'terms.html')));
@@ -250,6 +271,7 @@ async function start() {
   });
   await hydrateCatalog();
   await hydrateMappings();
+  await hydrateIgnoredMedia();
   app.listen(port, '0.0.0.0', () => {
     console.log(`Lupo bot listening on port ${port}, DRY_RUN=${config.dryRun}, storage=${storageMode()}`);
     console.log(`Panel de respuestas: http://127.0.0.1:${port}/admin`);

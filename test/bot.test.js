@@ -10,6 +10,14 @@ import { answerFor, publicCommentFor, privateReplyFor, setCatalog, getCatalog, r
 import { verifySignature, extractEvents, graphPost, escapeUnicodeForMeta } from '../src/meta.js';
 import { processEvent, resetTestState } from '../src/bot.js';
 import { getMappings, addMapping, updateMapping, deleteMapping, getProductForMedia, resetMappings, validateStore } from '../src/media-products.js';
+import {
+  getIgnoredMedia,
+  ignoreMedia,
+  unignoreMedia,
+  isMediaIgnored,
+  resetIgnoredMedia,
+  validateStore as validateIgnoredStore
+} from '../src/ignored-media.js';
 
 test('storageMode es file sin MySQL y mysqlConfigFromEnv lee variables Railway', () => {
   assert.equal(storageMode({}), 'file');
@@ -626,4 +634,54 @@ test('un comentario en un post asociado usa la respuesta pública de esa publica
   assert.equal(sent.at(-1).body.message, privateCommentNotice('comment5'));
 
   await resetMappings({ persist: false });
+});
+
+test('ignored-media CRUD y validación', async () => {
+  await resetIgnoredMedia({ persist: false });
+  assert.deepEqual(getIgnoredMedia(), []);
+  assert.equal(isMediaIgnored('17900000000000010'), false);
+
+  const entry = await ignoreMedia({ mediaId: '17900000000000010', note: 'Promo vieja' }, { persist: false });
+  assert.equal(entry.mediaId, '17900000000000010');
+  assert.equal(entry.note, 'Promo vieja');
+  assert.equal(isMediaIgnored('17900000000000010'), true);
+  assert.equal(getIgnoredMedia().length, 1);
+
+  await assert.rejects(
+    () => ignoreMedia({ mediaId: '17900000000000010' }, { persist: false }),
+    /ya está/
+  );
+  assert.throws(() => validateIgnoredStore({ mediaIds: [{ mediaId: 'bad' }] }), /no es válido/);
+
+  await unignoreMedia('17900000000000010', { persist: false });
+  assert.equal(isMediaIgnored('17900000000000010'), false);
+  assert.deepEqual(getIgnoredMedia(), []);
+  await resetIgnoredMedia({ persist: false });
+});
+
+test('el bot no responde comentarios de publicaciones ignoradas', async () => {
+  resetTestState();
+  await resetIgnoredMedia({ persist: false });
+  await ignoreMedia({ mediaId: '17900000000000077', note: 'Sorteo' }, { persist: false });
+
+  const sent = [];
+  const send = async (req) => { sent.push(req); return { id: 'ok' }; };
+  const event = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'i-ignored-1', senderId: 'c9', text: 'Precio',
+    mediaId: '17900000000000077'
+  };
+  assert.equal((await processEvent(event, cfg, send)).action, 'ignored_media');
+  assert.equal(sent.length, 0);
+  assert.equal((await processEvent(event, cfg, send)).action, 'duplicate');
+
+  const other = {
+    platform: 'instagram', kind: 'comment', accountId: 'ig123',
+    id: 'i-ok-1', senderId: 'c9', text: 'Precio',
+    mediaId: '17900000000000088'
+  };
+  assert.equal((await processEvent(other, cfg, send)).action, 'comment_price');
+  assert.equal(sent.length, 1);
+
+  await resetIgnoredMedia({ persist: false });
 });

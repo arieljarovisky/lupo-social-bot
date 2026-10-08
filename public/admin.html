@@ -84,10 +84,12 @@
     .check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); text-transform: none; letter-spacing: 0; font-weight: 500; }
     .check input { width: auto; }
     .ig-item { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 14px; padding: 10px; margin-bottom: 8px; background: #fff; }
+    .ig-item.ignored { border-style: dashed; background: #faf6ef; opacity: .9; }
     .ig-thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: #f4efe6; flex: 0 0 64px; }
     .ig-thumb.ph { display: grid; place-items: center; color: var(--muted); font-size: 11px; text-align: center; padding: 4px; }
     .ig-copy { flex: 1; min-width: 0; }
     .ig-id { font-family: Consolas, ui-monospace, monospace; font-size: 13px; word-break: break-all; margin: 2px 0; }
+    .badge-ignored { display: inline-block; margin-top: 6px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--warn); }
     details.intent { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
     details.intent summary { cursor: pointer; font-weight: 700; }
     details.intent textarea { margin-top: 8px; min-height: 72px; }
@@ -163,7 +165,7 @@
       </div>
       <div class="card" style="margin-bottom:16px">
         <h3 style="margin-bottom:12px">ID de la publicación</h3>
-        <p class="hint">Cargá las últimas publicaciones o pegá el link de un post, reel o video. El ID es el número que va en el mapeo.</p>
+        <p class="hint">Cargá las últimas publicaciones o pegá el link de un post, reel o video. El ID es el número que va en el mapeo. Con <strong>Ignorar</strong> el bot no responde comentarios de esa publicación.</p>
         <div class="row" style="margin-bottom:12px">
           <input id="igPostQuery" placeholder="https://www.instagram.com/p/..." style="flex:1;min-width:220px">
           <button type="button" class="secondary" id="findIgPost">Obtener ID</button>
@@ -171,6 +173,16 @@
         </div>
         <div id="igMediaList"></div>
         <p class="hint" id="igMediaStatus"></p>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin-bottom:12px">Publicaciones ignoradas</h3>
+        <p class="hint">El bot no contesta comentarios en estas publicaciones. Podés agregar el ID acá o usar Ignorar en la lista de arriba.</p>
+        <div class="row" style="margin-bottom:12px">
+          <input id="ignoreMediaId" placeholder="Media ID del post a ignorar" style="flex:1;min-width:220px">
+          <button type="button" class="secondary" id="ignoreMediaBtn">Ignorar</button>
+        </div>
+        <div id="ignoredList"></div>
+        <p class="hint" id="ignoredStatus"></p>
       </div>
       <div class="card" style="margin-bottom:16px">
         <h3 style="margin-bottom:12px">Agregar mapeo</h3>
@@ -228,7 +240,7 @@
   </div>
 
   <script>
-    const state = { catalog: null, meta: null, mappings: [], igAfter: '', token: sessionStorage.getItem('lupoAdminToken') || '' };
+    const state = { catalog: null, meta: null, mappings: [], ignored: [], igAfter: '', token: sessionStorage.getItem('lupoAdminToken') || '' };
 
     const $ = (id) => document.getElementById(id);
     const headers = () => {
@@ -544,6 +556,7 @@
       renderIntents();
       renderNewIntentEditors();
       await loadMappings();
+      await loadIgnored();
       $('app').classList.remove('hidden');
       $('savebar').classList.remove('hidden');
       $('login').classList.add('hidden');
@@ -656,6 +669,10 @@
       $('igMediaStatus').className = 'hint';
     }
 
+    function isIgnoredId(id) {
+      return state.ignored.some((item) => item.mediaId === id);
+    }
+
     function safePermalink(url) {
       try {
         const parsed = new URL(url);
@@ -667,10 +684,81 @@
       }
     }
 
-    function renderIgMedia(items, { append = false } = {}) {
+    function renderIgnoredList() {
+      const container = $('ignoredList');
+      if (!state.ignored.length) {
+        container.innerHTML = '<p class="hint">Ninguna publicación ignorada.</p>';
+        return;
+      }
+      container.innerHTML = state.ignored.map((item) => `
+        <article class="ig-item ignored" data-media-id="${escapeAttr(item.mediaId)}">
+          <div class="ig-copy">
+            <p class="ig-id">${escapeAttr(item.mediaId)}</p>
+            ${item.note ? `<p class="hint" style="margin:0">${escapeAttr(item.note)}</p>` : ''}
+            <span class="badge-ignored">Ignorada</span>
+          </div>
+          <div class="row">
+            <button type="button" class="secondary unignore-media" data-id="${escapeAttr(item.mediaId)}">Dejar de ignorar</button>
+          </div>
+        </article>
+      `).join('');
+      container.querySelectorAll('.unignore-media').forEach((btn) => {
+        btn.onclick = () => unignoreMediaId(btn.dataset.id);
+      });
+    }
+
+    async function loadIgnored() {
+      try {
+        const data = await api('/api/ignored-media');
+        state.ignored = data.mediaIds || [];
+        renderIgnoredList();
+      } catch (err) {
+        $('ignoredStatus').textContent = err.message;
+        $('ignoredStatus').className = 'hint err';
+      }
+    }
+
+    async function ignoreMediaId(id, note = '') {
+      try {
+        const result = await api('/api/ignored-media', {
+          method: 'POST',
+          body: JSON.stringify({ mediaId: id, note })
+        });
+        state.ignored.push(result.entry);
+        state.ignored.sort((a, b) => a.mediaId.localeCompare(b.mediaId));
+        renderIgnoredList();
+        if (state.igItems?.length) paintIgMediaList();
+        $('ignoredStatus').textContent = 'Publicación ignorada. El bot no responderá sus comentarios.';
+        $('ignoredStatus').className = 'hint';
+        $('igMediaStatus').textContent = 'Publicación marcada como ignorada.';
+        $('igMediaStatus').className = 'hint';
+      } catch (err) {
+        $('ignoredStatus').textContent = err.message;
+        $('ignoredStatus').className = 'hint err';
+        $('igMediaStatus').textContent = err.message;
+        $('igMediaStatus').className = 'hint err';
+      }
+    }
+
+    async function unignoreMediaId(id) {
+      try {
+        await api(`/api/ignored-media/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        state.ignored = state.ignored.filter((item) => item.mediaId !== id);
+        renderIgnoredList();
+        if (state.igItems?.length) paintIgMediaList();
+        $('ignoredStatus').textContent = 'La publicación ya no está ignorada.';
+        $('ignoredStatus').className = 'hint';
+      } catch (err) {
+        $('ignoredStatus').textContent = err.message;
+        $('ignoredStatus').className = 'hint err';
+      }
+    }
+
+    function paintIgMediaList() {
       const container = $('igMediaList');
-      if (!append) container.innerHTML = '';
-      if (!items.length && !append) {
+      const items = state.igItems || [];
+      container.innerHTML = '';
+      if (!items.length) {
         container.innerHTML = '<p class="hint">No hay publicaciones para mostrar.</p>';
         return;
       }
@@ -679,8 +767,9 @@
         const link = safePermalink(item.permalink);
         const when = formatWhen(item.timestamp);
         const caption = item.caption || 'Sin texto';
+        const ignored = isIgnoredId(item.id);
         return `
-          <article class="ig-item">
+          <article class="ig-item${ignored ? ' ignored' : ''}">
             ${thumb
               ? `<img class="ig-thumb" alt="" src="${escapeAttr(thumb)}">`
               : `<div class="ig-thumb ph">${escapeAttr(mediaTypeLabel(item.mediaType))}</div>`}
@@ -688,9 +777,13 @@
               <p class="ig-id">${escapeAttr(item.id)}</p>
               <p class="hint" style="margin:0">${escapeAttr(caption)}</p>
               <p class="hint" style="margin:4px 0 0">${escapeAttr([mediaTypeLabel(item.mediaType), when].filter(Boolean).join(' · '))}</p>
+              ${ignored ? '<span class="badge-ignored">Ignorada</span>' : ''}
             </div>
             <div class="row">
               <button type="button" class="secondary use-ig" data-id="${escapeAttr(item.id)}">Usar ID</button>
+              ${ignored
+                ? `<button type="button" class="secondary unignore-ig" data-id="${escapeAttr(item.id)}">Dejar de ignorar</button>`
+                : `<button type="button" class="danger ignore-ig" data-id="${escapeAttr(item.id)}" data-note="${escapeAttr(caption)}">Ignorar</button>`}
               ${link ? `<a class="btn secondary" href="${escapeAttr(link)}" target="_blank" rel="noopener">Abrir</a>` : ''}
             </div>
           </article>`;
@@ -699,26 +792,37 @@
       container.querySelectorAll('.use-ig').forEach((btn) => {
         btn.onclick = () => useMediaId(btn.dataset.id);
       });
+      container.querySelectorAll('.ignore-ig').forEach((btn) => {
+        btn.onclick = () => ignoreMediaId(btn.dataset.id, btn.dataset.note || '');
+      });
+      container.querySelectorAll('.unignore-ig').forEach((btn) => {
+        btn.onclick = () => unignoreMediaId(btn.dataset.id);
+      });
+      if (state.igAfter && !state.igQuery) {
+        container.insertAdjacentHTML('beforeend', '<div class="row" id="igMediaMore"><button type="button" class="secondary" id="moreIgPosts">Cargar más</button></div>');
+        $('moreIgPosts').onclick = () => loadIgMedia({ after: state.igAfter, append: true }).catch(showIgError);
+      }
+    }
+
+    function renderIgMedia(items, { append = false } = {}) {
+      if (append) state.igItems = (state.igItems || []).concat(items);
+      else state.igItems = items.slice();
+      paintIgMediaList();
     }
 
     async function loadIgMedia({ q = '', after = '', append = false } = {}) {
       $('igMediaStatus').textContent = 'Buscando en Instagram…';
       $('igMediaStatus').className = 'hint';
-      const previousMore = $('igMediaMore');
-      if (previousMore) previousMore.remove();
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       if (after) params.set('after', after);
       const data = await api(`/api/ig-media?${params}`);
       state.igAfter = data.after || '';
+      state.igQuery = q || '';
       renderIgMedia(data.media || [], { append });
-      if (state.igAfter && !q) {
-        $('igMediaList').insertAdjacentHTML('beforeend', '<div class="row" id="igMediaMore"><button type="button" class="secondary" id="moreIgPosts">Cargar más</button></div>');
-        $('moreIgPosts').onclick = () => loadIgMedia({ after: state.igAfter, append: true }).catch(showIgError);
-      }
       $('igMediaStatus').textContent = q
-        ? (data.media?.length ? 'Esta es la publicación.' : 'No encontré esa publicación.')
-        : 'Elegí Usar ID para completar el mapeo.';
+        ? (data.media?.length ? 'Esta es la publicación. Podés mapearla o ignorarla.' : 'No encontré esa publicación.')
+        : 'Elegí Usar ID para el mapeo o Ignorar para que el bot no responda.';
       $('igMediaStatus').className = 'hint';
     }
 
@@ -743,6 +847,23 @@
       if (event.key === 'Enter') {
         event.preventDefault();
         $('findIgPost').click();
+      }
+    });
+    $('ignoreMediaBtn').onclick = () => {
+      const mediaId = $('ignoreMediaId').value.trim();
+      if (!mediaId) {
+        $('ignoredStatus').textContent = 'Pegá el Media ID de la publicación.';
+        $('ignoredStatus').className = 'hint err';
+        return;
+      }
+      ignoreMediaId(mediaId).then(() => {
+        $('ignoreMediaId').value = '';
+      });
+    };
+    $('ignoreMediaId').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        $('ignoreMediaBtn').click();
       }
     });
 
