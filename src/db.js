@@ -144,6 +144,15 @@ async function createSchema() {
       note VARCHAR(160) NOT NULL DEFAULT ''
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS instagram_auth (
+      id TINYINT NOT NULL PRIMARY KEY DEFAULT 1,
+      ig_user_id VARCHAR(32) NOT NULL,
+      username VARCHAR(80) NOT NULL DEFAULT '',
+      access_token TEXT NOT NULL,
+      expires_at BIGINT NULL
+    )
+  `);
 }
 
 async function ensureColumn(table, column, definition) {
@@ -461,6 +470,29 @@ export async function insertIgnoredMedia(item) {
 export async function deleteIgnoredMedia(mediaId) {
   if (!pool) throw new Error('MySQL no inicializado');
   await pool.query('DELETE FROM ignored_media WHERE media_id = ?', [mediaId]);
+}
+
+export async function loadInstagramAuth() {
+  if (!pool) return null;
+  const [rows] = await pool.query(
+    `SELECT ig_user_id AS igUserId, username, access_token AS accessToken, expires_at AS expiresAt
+     FROM instagram_auth WHERE id = 1`
+  );
+  return rows[0] || null;
+}
+
+export async function saveInstagramAuth(record) {
+  if (!pool) throw new Error('MySQL no inicializado');
+  await pool.query(
+    `INSERT INTO instagram_auth (id, ig_user_id, username, access_token, expires_at)
+     VALUES (1, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       ig_user_id = VALUES(ig_user_id),
+       username = VALUES(username),
+       access_token = VALUES(access_token),
+       expires_at = VALUES(expires_at)`,
+    [record.igUserId, record.username || '', record.accessToken, record.expiresAt ?? null]
+  );
 }
 
 export async function closeDb() {

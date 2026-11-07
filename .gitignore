@@ -8,3 +8,4 @@ node_modules/
 data/replies.json
 data/media-products.json
 data/ignored-media.json
+data/instagram-auth.json

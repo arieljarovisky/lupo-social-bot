@@ -9,6 +9,10 @@ import { getMappings, addMapping, updateMapping, deleteMapping, hydrateMappings,
 import { getIgnoredMedia, ignoreMedia, unignoreMedia, hydrateIgnoredMedia } from './ignored-media.js';
 import { listInstagramMedia } from './ig-media.js';
 import { initDb, storageMode } from './db.js';
+import {
+  appCredentials, authorizeUrl, completeLogin, connectionView, hydrateInstagramAuth,
+  loadStoredAuth, redirectUri
+} from './ig-oauth.js';
 
 const env = process.env;
 const config = {
@@ -185,6 +189,52 @@ app.post('/api/preview', requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/instagram/connection', requireAdmin, async (req, res) => {
+  res.json(connectionView(await loadStoredAuth(), req));
+});
+
+app.post('/api/instagram/connect', requireAdmin, (req, res) => {
+  const creds = appCredentials();
+  if (!creds) {
+    return res.status(400).json({ error: 'Faltan IG_APP_ID e IG_APP_SECRET en el servidor.' });
+  }
+  try {
+    const redirect = redirectUri(req);
+    res.json({
+      url: authorizeUrl({ ...creds, redirect }),
+      redirectUri: redirect
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/oauth/instagram/callback', async (req, res) => {
+  const oauthError = String(req.query.error || '');
+  if (oauthError) {
+    console.log(`[IG OAUTH] Instagram rechazó el acceso: ${oauthError.slice(0, 80)}`);
+    return res.redirect('/admin?ig=denied');
+  }
+  try {
+    const record = await completeLogin({
+      code: req.query.code,
+      state: req.query.state,
+      req,
+      version: config.apiVersion
+    });
+    record && Object.assign(config, {
+      igAccessToken: record.accessToken,
+      igUserId: record.igUserId,
+      igUsername: record.username || config.igUsername
+    });
+    console.log(`[IG OAUTH] Conectado ${record.username || record.igUserId}`);
+    return res.redirect('/admin?ig=connected');
+  } catch (err) {
+    console.error('[IG OAUTH]', String(err.message || err).slice(0, 300));
+    return res.redirect('/admin?ig=error');
+  }
+});
+
 app.get('/api/ig-media', requireAdmin, async (req, res) => {
   try {
     const result = await listInstagramMedia(config, {
@@ -272,6 +322,7 @@ async function start() {
   await hydrateCatalog();
   await hydrateMappings();
   await hydrateIgnoredMedia();
+  await hydrateInstagramAuth(config);
   app.listen(port, '0.0.0.0', () => {
     console.log(`Lupo bot listening on port ${port}, DRY_RUN=${config.dryRun}, storage=${storageMode()}`);
     console.log(`Panel de respuestas: http://127.0.0.1:${port}/admin`);
