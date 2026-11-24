@@ -10,7 +10,7 @@ import { getIgnoredMedia, ignoreMedia, unignoreMedia, hydrateIgnoredMedia } from
 import { listInstagramMedia } from './ig-media.js';
 import { initDb, storageMode } from './db.js';
 import {
-  appCredentials, authorizeUrl, completeLogin, connectionView, hydrateInstagramAuth,
+  appCredentials, authorizeUrl, clearStoredAuth, completeLogin, connectionView, hydrateInstagramAuth,
   loadStoredAuth, redirectUri
 } from './ig-oauth.js';
 
@@ -189,8 +189,34 @@ app.post('/api/preview', requireAdmin, async (req, res) => {
   }
 });
 
+function instagramStatus(record, req) {
+  const view = connectionView(record, req);
+  const runtime = Boolean(config.igAccessToken && config.igUserId);
+  const envLinked = Boolean(String(env.IG_ACCESS_TOKEN || '').trim() && String(env.IG_USER_ID || '').trim());
+  return {
+    ...view,
+    connected: view.connected || runtime,
+    username: view.username || (runtime ? config.igUsername || '' : ''),
+    igUserId: view.igUserId || (runtime ? String(config.igUserId) : ''),
+    envLinked
+  };
+}
+
 app.get('/api/instagram/connection', requireAdmin, async (req, res) => {
-  res.json(connectionView(await loadStoredAuth(), req));
+  res.json(instagramStatus(await loadStoredAuth(), req));
+});
+
+app.post('/api/instagram/disconnect', requireAdmin, async (req, res) => {
+  try {
+    await clearStoredAuth();
+    config.igAccessToken = '';
+    config.igUserId = '';
+    config.igUsername = '';
+    console.log('[IG OAUTH] Cuenta desconectada');
+    res.json(instagramStatus(null, req));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.post('/api/instagram/connect', requireAdmin, (req, res) => {

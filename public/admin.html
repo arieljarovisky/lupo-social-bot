@@ -111,7 +111,10 @@
       <p class="hint">En Meta, abrí <strong>Configuración de la API con inicio de sesión de Instagram</strong>. Copiá el ID y el secreto de esa app a <code>IG_APP_ID</code> e <code>IG_APP_SECRET</code>. En las URI de redireccionamiento válidas pegá exactamente esta dirección:</p>
       <input id="igRedirect" readonly>
       <p id="igConnectStatus" class="hint" style="margin-top:12px"></p>
-      <button type="button" id="igConnectBtn">Conectar cuenta de Instagram</button>
+      <div class="row">
+        <button type="button" id="igConnectBtn">Conectar cuenta de Instagram</button>
+        <button type="button" id="igDisconnectBtn" class="danger hidden">Desconectar</button>
+      </div>
     </section>
 
     <section>
@@ -549,15 +552,20 @@
         const data = await api('/api/instagram/connection');
         $('igRedirect').value = data.redirectUri || '';
         $('igConnectBtn').disabled = !data.ready;
-        if (!data.ready) {
+        $('igDisconnectBtn').classList.toggle('hidden', !data.connected);
+        $('igConnectBtn').textContent = data.connected ? 'Cambiar cuenta de Instagram' : 'Conectar cuenta de Instagram';
+        if (!data.ready && !data.connected) {
           $('igConnectStatus').textContent = 'Falta configurar IG_APP_ID e IG_APP_SECRET en el servidor y reiniciar.';
           $('igConnectStatus').className = 'hint err';
           return;
         }
         const when = data.expiresAt ? ` Vence el ${new Date(Number(data.expiresAt)).toLocaleDateString('es-AR')}.` : '';
+        const envNote = data.envLinked
+          ? ' También hay IG_ACCESS_TOKEN en el servidor: al reiniciar vuelve a conectarse hasta que borres esa variable.'
+          : '';
         const who = data.connected
-          ? `Conectada: @${data.username || data.igUserId}.${when}`
-          : 'Todavía no hay una cuenta conectada.';
+          ? `Conectada: @${data.username || data.igUserId}.${when}${envNote}`
+          : `Todavía no hay una cuenta conectada.${envNote}`;
         const notice = result === 'connected' ? ' Listo, el bot ya usa esta cuenta.'
           : result === 'denied' ? ' Cancelaste el acceso en Instagram.'
           : result === 'error' ? ' Instagram no completó la conexión. Volvé a intentarlo.'
@@ -638,6 +646,20 @@
         $('igConnectStatus').textContent = err.message;
         $('igConnectStatus').className = 'hint err';
         $('igConnectBtn').disabled = false;
+      }
+    };
+
+    $('igDisconnectBtn').onclick = async () => {
+      if (!confirm('¿Desconectar la cuenta de Instagram? El bot deja de responder hasta que vuelvas a conectarla.')) return;
+      $('igDisconnectBtn').disabled = true;
+      try {
+        await api('/api/instagram/disconnect', { method: 'POST', body: '{}' });
+        await loadIgConnection();
+      } catch (err) {
+        $('igConnectStatus').textContent = err.message;
+        $('igConnectStatus').className = 'hint err';
+      } finally {
+        $('igDisconnectBtn').disabled = false;
       }
     };
 

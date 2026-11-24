@@ -1,8 +1,8 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isMysqlConfigured, loadInstagramAuth, saveInstagramAuth } from './db.js';
+import { deleteInstagramAuth, isMysqlConfigured, loadInstagramAuth, saveInstagramAuth } from './db.js';
 
 const SCOPES = [
   'instagram_business_basic',
@@ -120,6 +120,18 @@ export async function saveStoredAuth(record, env = process.env) {
     return;
   }
   writeFileAuth(record, env);
+}
+
+export async function clearStoredAuth(env = process.env) {
+  if (isMysqlConfigured(env)) {
+    await deleteInstagramAuth();
+    return;
+  }
+  try {
+    unlinkSync(authPath(env));
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
 }
 
 export function applyInstagramAuth(config, record) {

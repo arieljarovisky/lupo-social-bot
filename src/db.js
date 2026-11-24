@@ -495,6 +495,11 @@ export async function saveInstagramAuth(record) {
   );
 }
 
+export async function deleteInstagramAuth() {
+  if (!pool) throw new Error('MySQL no inicializado');
+  await pool.query('DELETE FROM instagram_auth WHERE id = 1');
+}
+
 export async function closeDb() {
   if (!pool) return;
   await pool.end();

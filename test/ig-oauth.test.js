@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  appCredentials, authorizeUrl, applyInstagramAuth, connectionView, parseShortToken,
+  appCredentials, authorizeUrl, applyInstagramAuth, clearStoredAuth, connectionView, parseShortToken,
   saveStoredAuth, loadStoredAuth, signState, verifyState
 } from '../src/ig-oauth.js';
 
@@ -63,6 +63,9 @@ test('guarda la cuenta en archivo sin MySQL', async () => {
     const stored = await loadStoredAuth(fileEnv);
     assert.equal(stored.accessToken, 'largo');
     assert.equal(stored.username, 'lupoargentina');
+    await clearStoredAuth(fileEnv);
+    assert.equal(await loadStoredAuth(fileEnv), null);
+    await clearStoredAuth(fileEnv);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
